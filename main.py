@@ -1,4 +1,5 @@
 import streamlit as st
+import urllib.parse # Added import
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
@@ -39,12 +40,12 @@ def apply_windows11_theme():
         hover_color = "#106ebe"
         border_color = "#484848"
     else:
-        bg_color = "#f3f3f3"
+        bg_color = "#F4F6F8"
         surface_color = "#ffffff"
         card_color = "#fafafa"
-        text_color = "#323130"
-        accent_color = "#0078d4"
-        hover_color = "#106ebe"
+        text_color = "#212529"  # Updated text color
+        accent_color = "#3C82F6"  # Updated accent color
+        hover_color = "#2575F5"  # Updated hover color
         border_color = "#e1dfdd"
     
     st.markdown(f"""
@@ -53,34 +54,69 @@ def apply_windows11_theme():
         background-color: {bg_color};
         color: {text_color};
     }}
+
+    .main-title {{
+        font-size: 2.5em; /* Larger font size */
+        font-weight: bold; /* Bolder font weight */
+        margin-bottom: 0px; /* Reduced bottom margin */
+    }}
+
+    .caption-text {{
+        font-size: 0.85em; /* Smaller font size */
+        color: #6c757d; /* Lighter color */
+        padding-top: 0px; /* Reduced top padding */
+    }}
+
+    /* Removed .asset-name-button styles */
     
     .asset-bubble {{
-        background: linear-gradient(135deg, {accent_color} 0%, {hover_color} 100%);
+        background-color: {card_color}; /* Use card_color for background */
         border-radius: 8px;
-        padding: 16px;
+        padding: 12px; /* Adjusted padding */
         margin: 8px;
-        color: white;
+        /* color: white; Removed, will inherit from .stApp */
         transition: all 0.3s ease;
         box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-        min-height: 140px;
+        min-height: 140px; /* Keep or adjust as needed */
         display: flex;
         flex-direction: column;
         justify-content: space-between;
+        border-left: 5px solid transparent; /* Base for status line */
     }}
     
     .asset-bubble:hover {{
         transform: translateY(-2px);
         box-shadow: 0 4px 16px rgba(0,0,0,0.2);
-        background: linear-gradient(135deg, {hover_color} 0%, {accent_color} 100%);
+        /* background: linear-gradient(135deg, {hover_color} 0%, {accent_color} 100%); Removed gradient hover */
     }}
-    
-    .asset-name {{
+
+    /* Status Indicator Border Colors */
+    .status-indicator-online {{ border-left-color: #3C82F6 !important; }}
+    .status-indicator-offline {{ border-left-color: #D9534F !important; }}
+    .status-indicator-scanning {{ border-left-color: #777777 !important; }}
+    .status-indicator-pending {{ border-left-color: #F0AD4E !important; }}
+    .status-indicator-failed {{ border-left-color: #D9534F !important; }}
+
+    .asset-bubble-content {{
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        height: 100%;
+    }}
+
+    .asset-header {{
+        margin-bottom: 8px;
+    }}
+
+    .asset-name-link {{
         font-size: 16px;
         font-weight: 600;
-        margin-bottom: 4px;
-        text-overflow: ellipsis;
-        overflow: hidden;
-        white-space: nowrap;
+        text-decoration: none;
+        color: {text_color};
+    }}
+    .asset-name-link:hover {{
+        text-decoration: underline;
+        color: {hover_color};
     }}
     
     .asset-ip {{
@@ -108,16 +144,19 @@ def apply_windows11_theme():
         padding: 4px 8px;
         font-size: 10px;
         text-decoration: none;
-        color: white;
+        color: {accent_color}; /* Use accent_color for links */
+        background-color: transparent; /* Remove specific background */
+        border: none; /* Remove specific border */
+        padding: 4px 0px; /* Adjust padding if needed */
         display: inline-block;
         transition: all 0.2s ease;
     }}
     
     .anydesk-link:hover {{
-        background-color: rgba(255,255,255,0.3);
-        border-color: rgba(255,255,255,0.5);
-        color: white;
-        text-decoration: none;
+        /* background-color: rgba(255,255,255,0.3); Removed */
+        /* border-color: rgba(255,255,255,0.5); Removed */
+        color: {hover_color}; /* Darken or change link color on hover */
+        text-decoration: underline;
     }}
     
     .asset-storage {{
@@ -127,23 +166,23 @@ def apply_windows11_theme():
     }}
     
     .low-storage {{
-        background: linear-gradient(135deg, #dc3545 0%, #c82333 100%) !important;
-        border: 2px solid #ff6b6b !important;
+        /* This class is applied to asset-bubble, so it might conflict with status indicators if it also changes border-left. */
+        /* For now, keep its distinct background, but ensure it doesn't override the status border. */
+        background-color: #FFF3CD !important; /* A light yellow, distinct from card_color but less aggressive than gradient */
+        /* border: 2px solid #F0AD4E !important; /* This might be too much with border-left */
+        /* Consider a more subtle low storage indication if using border-left for status */
     }}
     
     .low-storage:hover {{
-        background: linear-gradient(135deg, #c82333 0%, #a71e2a 100%) !important;
+        background-color: #FFF3CD !important; /* Keep consistent on hover, or slightly darker shade of yellow */
     }}
-    
-    .status-online {{
-        color: #10b981;
-        font-size: 12px;
-    }}
-    
-    .status-offline {{
-        color: #ef4444;
-        font-size: 12px;
-    }}
+
+    /* Status Text Colors */
+    .status-online {{ color: #3C82F6; font-size: 12px; }}
+    .status-offline {{ color: #D9534F; font-size: 12px; }}
+    .status-scanning {{ color: #777777; font-size: 12px; }}
+    .status-pending {{ color: #F0AD4E; font-size: 12px; }}
+    .status-failed {{ color: #D9534F; font-size: 12px; }}
     
     .filter-section {{
         background-color: {surface_color};
@@ -159,6 +198,80 @@ def apply_windows11_theme():
         border-radius: 8px;
         padding: 16px;
         margin: 8px 0;
+    }}
+
+    .filter-pill-container {{
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px; /* Space between pills */
+        padding-bottom: 16px; /* Space below the pill container */
+        align-items: center; /* Align items vertically */
+    }}
+
+    .filter-pill {{
+        background-color: #e9ecef;
+        color: #495057;
+        padding: 5px 8px 5px 12px; /* Top Right Bottom Left */
+        border-radius: 16px;
+        font-size: 0.875em;
+        display: flex; /* Use flex to align text and button */
+        align-items: center;
+        gap: 5px; /* Space between text and button */
+        border: 1px solid #ced4da;
+    }}
+
+    .filter-pill-text {{
+        /* No specific styling needed if it's just text, but can add if required */
+    }}
+
+    /* Styling for the dismiss button itself (Streamlit's default button is hard to override perfectly) */
+    /* We target the button within the specific structure Streamlit creates */
+    .filter-pill .stButton button {{
+        background-color: transparent !important;
+        color: #6c757d !important; /* Muted color for 'x' */
+        border: none !important;
+        padding: 0px 3px !important; /* Minimal padding */
+        margin: 0 !important;
+        line-height: 1 !important; /* Align 'x' better */
+        font-size: 1.2em !important; /* Make 'x' slightly larger */
+        font-weight: bold !important;
+        box-shadow: none !important;
+    }}
+    .filter-pill .stButton button:hover {{
+        color: #343a40 !important; /* Darker on hover */
+        background-color: transparent !important;
+    }}
+    .filter-pill .stButton button:focus {{
+        outline: none !important;
+        box-shadow: none !important;
+    }}
+
+    .asset-details-group {{
+        margin-bottom: 8px;
+    }}
+
+    .asset-footer-group {{
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        font-size: 12px;
+    }}
+
+    .asset-account, .asset-user-email {{
+        font-size: 11px;
+        opacity: 0.8;
+        margin-bottom: 4px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }}
+
+    .summary-charts-container {{
+        padding: 10px;
+        /* background-color: #f8f9fa; /* Optional: slight background for the charts area */
+        /* border: 1px solid #dee2e6;    /* Optional: border for the charts area */
+        border-radius: 8px;
+        margin-bottom: 16px; /* Space below the charts container */
     }}
     </style>
     """, unsafe_allow_html=True)
@@ -194,6 +307,31 @@ class ITAssetDashboard:
             st.session_state.nmap_scan_queue = []
         if 'nmap_currently_scanning' not in st.session_state:
             st.session_state.nmap_currently_scanning = None # Stores asset name being scanned
+
+        # --- Filter-related session state initialization ---
+        if 'selected_os_filter' not in st.session_state:
+            st.session_state.selected_os_filter = []
+        if 'selected_manufacturers_filter' not in st.session_state:
+            st.session_state.selected_manufacturers_filter = []
+        if 'ram_range_filter' not in st.session_state: # Tuple: (min_ram, max_ram) or None
+            st.session_state.ram_range_filter = None
+        if 'storage_range_filter' not in st.session_state: # Tuple: (min_storage, max_storage) or None
+            st.session_state.storage_range_filter = None
+        # show_low_storage_only is already initialized
+        if 'anydesk_search_filter' not in st.session_state:
+            st.session_state.anydesk_search_filter = ""
+        if 'search_term_filter' not in st.session_state:
+            st.session_state.search_term_filter = ""
+        # selected_assets_filter is removed
+
+        # UI Customization Settings
+        if 'show_summary_section' not in st.session_state:
+            st.session_state.show_summary_section = True
+        if 'show_bubbles_section' not in st.session_state:
+            st.session_state.show_bubbles_section = True
+        if 'show_details_table_section' not in st.session_state:
+            st.session_state.show_details_table_section = True
+
 
     def _run_nmap_scan(self, ip_address: str, nmap_executable_path: str = "nmap", scan_type: str = "Full Scan") -> dict:
         """Run nmap scan on a given IP address and parse results based on scan type."""
@@ -424,9 +562,9 @@ class ITAssetDashboard:
         col1, col2, col3, col4 = st.columns([3, 1, 1, 1])
         
         with col1:
-            st.title("🖥️ IT Asset Management Dashboard")
+            st.markdown('<p class="main-title">🖥️ IT Asset Management Dashboard</p>', unsafe_allow_html=True)
             if st.session_state.last_refresh:
-                st.caption(f"Last updated: {st.session_state.last_refresh.strftime('%Y-%m-%d %H:%M:%S')}")
+                st.markdown(f'<p class="caption-text">Last updated: {st.session_state.last_refresh.strftime("%Y-%m-%d %H:%M:%S")}</p>', unsafe_allow_html=True)
         
         with col2:
             # Theme toggle
@@ -452,100 +590,130 @@ class ITAssetDashboard:
             st.sidebar.info("No asset data available. Please ensure asset files are in the 'assets' folder.")
             return {}
 
-        # Asset selection
-        asset_names = list(st.session_state.assets_data.keys())
-        selected_assets = st.sidebar.multiselect(
-            "Select Assets",
-            options=asset_names,
-            default=asset_names,
-            help="Select specific assets to display"
-        )
+        # Asset selection (Removed)
 
         # OS filter with normalized versions
-        os_versions = set()
-        manufacturers = set()
+        all_os_versions_set = set()
+        all_manufacturers_set = set()
+        all_ram_values_list = []
+        all_storage_values_list = []
+
         for asset in st.session_state.assets_data.values():
             if 'os_info' in asset and asset['os_info'].get('version'):
-                normalized_os = self.normalize_os_version(asset['os_info']['version'])
-                os_versions.add(normalized_os)
+                all_os_versions_set.add(self.normalize_os_version(asset['os_info']['version']))
             if 'system_info' in asset and asset['system_info'].get('manufacturer'):
-                manufacturers.add(asset['system_info']['manufacturer'])
+                all_manufacturers_set.add(asset['system_info']['manufacturer'])
+            memory_gb = asset.get('hardware_info', {}).get('memory', {}).get('total_gb', 0)
+            if memory_gb:
+                all_ram_values_list.append(int(memory_gb))
+            c_drive_free = self.get_c_drive_free_space(asset)
+            if c_drive_free is not None:
+                all_storage_values_list.append(c_drive_free)
+
+        sorted_os_options = sorted(list(all_os_versions_set))
+        sorted_manufacturer_options = sorted(list(all_manufacturers_set))
+
+        # Initialize OS filter state if empty (first run or cleared)
+        if not st.session_state.selected_os_filter and sorted_os_options:
+            st.session_state.selected_os_filter = sorted_os_options.copy()
 
         selected_os = st.sidebar.multiselect(
             "Operating System",
-            options=sorted(os_versions),
-            default=sorted(os_versions),
+            options=sorted_os_options,
+            default=st.session_state.selected_os_filter,
+            key="selected_os_multiselect",
+            on_change=lambda: setattr(st.session_state, 'selected_os_filter', st.session_state.selected_os_multiselect),
             help="Filter by operating system"
         )
+        st.session_state.selected_os_filter = selected_os
+
+        # Initialize Manufacturer filter state if empty
+        if not st.session_state.selected_manufacturers_filter and sorted_manufacturer_options:
+            st.session_state.selected_manufacturers_filter = sorted_manufacturer_options.copy()
 
         selected_manufacturers = st.sidebar.multiselect(
             "Manufacturer",
-            options=sorted(manufacturers),
-            default=sorted(manufacturers),
+            options=sorted_manufacturer_options,
+            default=st.session_state.selected_manufacturers_filter,
+            key="selected_manufacturers_multiselect",
+            on_change=lambda: setattr(st.session_state, 'selected_manufacturers_filter', st.session_state.selected_manufacturers_multiselect),
             help="Filter by computer manufacturer"
         )
+        st.session_state.selected_manufacturers_filter = selected_manufacturers
 
         # RAM range filter
         st.sidebar.subheader("Hardware Filters")
-        ram_values = []
-        for asset in st.session_state.assets_data.values():
-            memory_gb = asset.get('hardware_info', {}).get('memory', {}).get('total_gb', 0)
-            if memory_gb:
-                ram_values.append(int(memory_gb))
+        actual_min_ram = min(all_ram_values_list) if all_ram_values_list else 0
+        actual_max_ram = max(all_ram_values_list) if all_ram_values_list else 128 # Default max if no data
         
-        if ram_values:
-            min_ram, max_ram = st.sidebar.slider(
-                "RAM Range (GB)",
-                min_value=min(ram_values),
-                max_value=max(ram_values),
-                value=(min(ram_values), max(ram_values)),
-                help="Filter by RAM amount"
-            )
-        else:
-            min_ram, max_ram = 0, 999
+        current_ram_filter = st.session_state.ram_range_filter
+        if current_ram_filter is None: # Not set by user/dismissal yet
+            current_ram_filter = (actual_min_ram, actual_max_ram)
+
+        min_ram, max_ram = st.sidebar.slider(
+            "RAM Range (GB)",
+            min_value=actual_min_ram,
+            max_value=actual_max_ram,
+            value=current_ram_filter,
+            key="ram_slider",
+            on_change=lambda: setattr(st.session_state, 'ram_range_filter', st.session_state.ram_slider),
+            help="Filter by RAM amount"
+        )
+        st.session_state.ram_range_filter = (min_ram, max_ram)
+
 
         # HDD space filter
-        storage_values = []
-        for asset in st.session_state.assets_data.values():
-            c_drive_free = self.get_c_drive_free_space(asset)
-            if c_drive_free is not None:
-                storage_values.append(c_drive_free)
+        actual_min_storage = 0.0
+        actual_max_storage = max(all_storage_values_list) if all_storage_values_list else 500.0 # Default max if no data
+
+        current_storage_filter = st.session_state.storage_range_filter
+        if current_storage_filter is None:
+            current_storage_filter = (actual_min_storage, actual_max_storage)
         
-        if storage_values:
-            min_storage, max_storage = st.sidebar.slider(
-                "C Drive Free Space (GB)",
-                min_value=0.0,
-                max_value=max(storage_values),
-                value=(0.0, max(storage_values)),
-                help="Filter by available C drive space"
-            )
-        else:
-            min_storage, max_storage = 0, 999
+        min_storage, max_storage = st.sidebar.slider(
+            "C Drive Free Space (GB)",
+            min_value=actual_min_storage,
+            max_value=actual_max_storage,
+            value=current_storage_filter,
+            key="storage_slider",
+            on_change=lambda: setattr(st.session_state, 'storage_range_filter', st.session_state.storage_slider),
+            help="Filter by available C drive space"
+        )
+        st.session_state.storage_range_filter = (min_storage, max_storage)
 
         # Quick filters
         st.sidebar.subheader("Quick Filters")
+        # show_low_storage_only is already correctly bound to st.session_state.show_low_storage_only
         show_low_storage = st.sidebar.checkbox(
             "🔴 Show Low Storage Assets Only (<10GB)",
-            value=st.session_state.show_low_storage_only,
+            value=st.session_state.show_low_storage_only, # Directly use the session state var
+            key="show_low_storage_checkbox",
+            on_change=lambda: setattr(st.session_state, 'show_low_storage_only', st.session_state.show_low_storage_checkbox),
             help="Show only assets with less than 10GB free space on C drive"
         )
-        
-        if show_low_storage != st.session_state.show_low_storage_only:
-            st.session_state.show_low_storage_only = show_low_storage
+        # No need for the if show_low_storage != ... block anymore if using on_change
 
         # AnyDesk ID filter
         anydesk_search = st.sidebar.text_input(
             "AnyDesk ID",
+            value=st.session_state.anydesk_search_filter,
+            key="anydesk_search_input",
+            on_change=lambda: setattr(st.session_state, 'anydesk_search_filter', st.session_state.anydesk_search_input),
             placeholder="Search by AnyDesk ID",
             help="Filter by specific AnyDesk ID"
         )
+        st.session_state.anydesk_search_filter = anydesk_search
 
         # Search functionality
         search_term = st.sidebar.text_input(
             "General Search",
+            value=st.session_state.search_term_filter,
+            key="search_term_input",
+            on_change=lambda: setattr(st.session_state, 'search_term_filter', st.session_state.search_term_input),
             placeholder="Search by computer name, IP, etc.",
             help="Search across all asset properties"
         )
+        st.session_state.search_term_filter = search_term
 
         # Nmap Settings
         st.sidebar.subheader("Network Scanning") # Simplified header
@@ -580,7 +748,7 @@ class ITAssetDashboard:
             st.session_state.nmap_path = nmap_path_ui
 
         return {
-            'selected_assets': selected_assets,
+            # 'selected_assets': selected_assets, # Removed
             'selected_os': selected_os,
             'selected_manufacturers': selected_manufacturers,
             'min_ram': min_ram,
@@ -591,18 +759,35 @@ class ITAssetDashboard:
             'anydesk_search': anydesk_search,
             'search_term': search_term,
             # 'nmap_enabled' is now implicitly handled by nmap_scan_type
-            'nmap_scan_type': st.session_state.nmap_scan_type,
-            'nmap_path': st.session_state.nmap_path
+            'nmap_scan_type': st.session_state.nmap_scan_type, # This is nmap setting, not a typical data filter pill
+            'nmap_path': st.session_state.nmap_path # Same as above
         }
+
+        # --- View Customization Expander ---
+        with st.sidebar.expander("⚙️ View Customization", expanded=False):
+            st.session_state.show_summary_section = st.checkbox(
+                "Show Summary & Charts",
+                value=st.session_state.get('show_summary_section', True)
+                # key="show_summary_cb" # Key not strictly needed if direct assignment to session_state
+            )
+            st.session_state.show_bubbles_section = st.checkbox(
+                "Show Asset Bubbles",
+                value=st.session_state.get('show_bubbles_section', True)
+                # key="show_bubbles_cb"
+            )
+            st.session_state.show_details_table_section = st.checkbox(
+                "Show Asset Details Table",
+                value=st.session_state.get('show_details_table_section', True)
+                # key="show_details_table_cb"
+            )
+        return filters # Return original filters dictionary, session state handles customization
 
     def filter_assets(self, filters):
         """Apply filters to the assets data"""
         filtered_assets = {}
         
         for name, asset in st.session_state.assets_data.items():
-            # Asset name filter
-            if filters['selected_assets'] and name not in filters['selected_assets']:
-                continue
+            # Asset name filter (Removed)
             
             # OS filter with normalized comparison
             if filters['selected_os']:
@@ -671,74 +856,136 @@ class ITAssetDashboard:
                     self.render_single_asset_bubble(name, asset)
     
     def render_single_asset_bubble(self, name, asset):
-        """Render a single asset bubble"""
-        # Extract asset information
+        """Render a single asset bubble with new HTML structure and link-based navigation."""
         ip_address = asset.get('network_info', {}).get('ip_address', 'No IP')
-        os_version = self.normalize_os_version(asset.get('os_info', {}).get('version', 'Unknown'))
+        os_version = self.normalize_os_version(asset.get('os_info', {}).get('version', 'Unknown OS'))
         memory_gb = asset.get('hardware_info', {}).get('memory', {}).get('total_gb', 0)
         memory_display = f"{int(memory_gb)} GB" if memory_gb else "N/A"
         anydesk_id = asset.get('anydesk_id', '')
-        # If "ID" is an explicitly bad value, treat it as if no ID was found.
-        if anydesk_id == "ID":
-            anydesk_id = ""
+        if anydesk_id == "ID": anydesk_id = ""
 
         network_info = asset.get('network_info', {})
         status = network_info.get('status', 'unknown')
         nmap_scan_status = network_info.get('nmap_scan_status', 'unknown')
         
-        # Extract C Drive free space
         c_drive_free_gb = self.get_c_drive_free_space(asset)
-        c_drive_display = f"C: {c_drive_free_gb:.1f} GB free" if c_drive_free_gb is not None else "C: N/A"
+        c_drive_display = f"{c_drive_free_gb:.1f} GB free" if c_drive_free_gb is not None else "N/A"
         low_storage = c_drive_free_gb is not None and c_drive_free_gb < 10
-        
-        # Create the bubble HTML without problematic onClick
-        anydesk_html = ""
-        if anydesk_id:
-            anydesk_html = f'<a href="anydesk:{anydesk_id}" class="anydesk-link" target="_blank">AnyDesk: {anydesk_id}</a>'
 
-        # Determine status display based on nmap_scan_status and actual status
+        anydesk_html_link = ""
+        if anydesk_id:
+            anydesk_html_link = f'<a href="anydesk:{anydesk_id}" class="anydesk-link" target="_blank">AnyDesk: {anydesk_id}</a>'
+
+        status_indicator_class = ""
+        status_text_class = ""
+        plain_status_text = ""
+
         if nmap_scan_status == 'scanning':
-            status_text = "🔬 Scanning..."
-            status_class = "status-scanning" # Needs CSS
+            plain_status_text = "Scanning"
+            status_indicator_class = "status-indicator-scanning"
+            status_text_class = "status-scanning"
         elif nmap_scan_status == 'pending':
-            status_text = "🕒 Scan pending"
-            status_class = "status-pending" # Needs CSS
+            plain_status_text = "Scan pending"
+            status_indicator_class = "status-indicator-pending"
+            status_text_class = "status-pending"
         elif nmap_scan_status == 'failed':
-            status_text = "❌ Scan failed"
-            status_class = "status-offline" # Or a specific 'status-failed' class
+            plain_status_text = "Scan failed"
+            status_indicator_class = "status-indicator-failed"
+            status_text_class = "status-failed"
         elif status == 'online':
-            status_text = "● Online"
-            status_class = "status-online"
-        else: # Covers 'offline', 'unknown', 'error' from nmap, or initial 'unknown'
-            status_text = "● Offline"
-            status_class = "status-offline"
+            plain_status_text = "Online"
+            status_indicator_class = "status-indicator-online"
+            status_text_class = "status-online"
+        else:
+            plain_status_text = "Offline"
+            status_indicator_class = "status-indicator-offline"
+            status_text_class = "status-offline"
         
         storage_class = "low-storage" if low_storage else ""
-        bubble_class = f"asset-bubble {storage_class}"
+        bubble_classes_list = ["asset-bubble", status_indicator_class, storage_class]
+        final_bubble_class = " ".join(filter(None, set(bubble_classes_list)))
         
+        name_url_encoded = urllib.parse.quote(name)
+
+
+        # Extract Windows User Account from raw_content
+        windows_account_html = ""
+        raw_content = asset.get('raw_content', '')
+        if raw_content:
+            # Try a few regex patterns to find the user account
+            patterns = [
+                r"Windows account:\s*(?:[^\\]+\\)?([^\r\n]+)", # Domain\User or just User
+                r"User Account:\s*([^\r\n]+)",
+                r"Current User:\s*([^\r\n]+)"
+            ]
+            username_found = None
+            for pattern in patterns:
+                match = re.search(pattern, raw_content, re.IGNORECASE)
+                if match:
+                    username_found = match.group(1).strip()
+                    if username_found and username_found != "N/A": # Ensure it's not 'N/A'
+                        break
+            if username_found and username_found != "N/A": # Double check after loop
+                 windows_account_html = f'<div class="asset-account">👤 {username_found}</div>'
+            elif "Windows account: N/A" not in raw_content and "User Account: N/A" not in raw_content: # Avoid showing empty if explicitly N/A
+                logger.debug(f"Windows account not found or explicitly N/A for asset {name}.")
+
+
+        # Extract User Email
+        user_email_html = ""
+        user_email = asset.get('user_email')
+        if user_email and user_email.strip() and user_email.lower() != 'n/a':
+            user_email_html = f'<div class="asset-user-email">📧 {user_email}</div>'
+
         bubble_html = f"""
-        <div class="{bubble_class}">
-            <div>
-                <div class="asset-name">{name}</div>
-                <div class="asset-ip">{ip_address}</div>
-                <div class="asset-os">{os_version}</div>
-                <div class="asset-ram">{memory_display}</div>
-                <div class="asset-storage">{c_drive_display}</div>
-            </div>
-            <div>
-                <div class="{status_class}">{status_text}</div>
-                {anydesk_html}
+        <div class="{final_bubble_class}">
+            <div class="asset-bubble-content">
+                <div class="asset-header">
+                    <a class="asset-name-link" href="/?view_asset={name_url_encoded}" target="_self">{name}</a>
+                    <div class="asset-ip">{ip_address}</div>
+                </div>
+                <div class="asset-details-group">
+                    <div class="asset-os">🖥️ OS: {os_version}</div>
+                    <div class="asset-ram">💾 RAM: {memory_display}</div>
+                    <div class="asset-storage">💽 Storage (C:): {c_drive_display}</div>
+                    {windows_account_html}
+                    {user_email_html}
+                </div>
+                <div class="asset-footer-group">
+                    <span class="{status_text_class}">{plain_status_text}</span>
+                    {anydesk_html_link}
+                </div>
             </div>
         </div>
         """
-        
         st.markdown(bubble_html, unsafe_allow_html=True)
-        
-        # Use Streamlit button for click handling
-        if st.button(f"📋 {name}", key=f"asset_btn_{name}", help="Click to view details", use_container_width=True):
-            st.session_state.selected_asset_for_details = name
-            st.session_state.show_asset_details = True
-            st.rerun()
+
+    def render_status_distribution_chart(self, assets):
+        """Render pie chart for asset status distribution."""
+        if not assets:
+            # st.info("No data to display asset status chart.") # Or just return silently
+            return
+
+        st.subheader("Assets by Status")
+        status_counts = {}
+        for asset_data in assets.values():
+            status = asset_data.get('network_info', {}).get('status', 'unknown')
+            status_counts[status] = status_counts.get(status, 0) + 1
+
+        if status_counts:
+            # Define colors for specific statuses if desired
+            # color_map = {'online': '#28a745', 'offline': '#dc3545', 'unknown': '#6c757d', ...}
+            fig = px.pie(
+                values=list(status_counts.values()),
+                names=list(status_counts.keys()),
+                title="Asset Status Overview", # Chart specific title
+                # color_discrete_map=color_map # Optional: apply custom colors
+            )
+            fig.update_traces(textposition='inside', textinfo='percent+label')
+            st.plotly_chart(fig, use_container_width=True)
+        else:
+            st.info("No status data available for visualization.")
+
 
     def render_asset_details_modal(self, assets):
         """Render asset details in a modal-like container"""
@@ -800,6 +1047,7 @@ class ITAssetDashboard:
             st.warning("No assets match the current filters.")
             return
 
+        st.subheader("Dashboard Metrics") # Added subheader
         col1, col2, col3, col4 = st.columns(4)
         
         # Calculate metrics
@@ -948,7 +1196,6 @@ class ITAssetDashboard:
                 logger.info("render_asset_details: Download button prepared.")
             except Exception as e:
                 logger.error(f"render_asset_details: Failed to convert DataFrame to CSV or prepare download button: {str(e)}")
-                st.error("Failed to generate CSV report for download.")
                 # Still display the table if CSV fails
         else:
             logger.info("render_asset_details: DataFrame is empty, skipping CSV conversion and download button.")
@@ -993,6 +1240,27 @@ class ITAssetDashboard:
     def run(self):
         """Main application entry point"""
         try:
+            # Query param processing for direct asset view
+            if 'view_asset' in st.query_params:
+                try:
+                    # Ensure assets_data is loaded before checking query_params related to it.
+                    if not st.session_state.assets_data: # Initial load might be needed
+                        with st.spinner("Loading asset data..."):
+                             st.session_state.assets_data = self.load_assets_data()
+
+                    asset_name_from_query = urllib.parse.unquote(st.query_params['view_asset'])
+                    if asset_name_from_query in st.session_state.assets_data:
+                        st.session_state.selected_asset_for_details = asset_name_from_query
+                        st.session_state.show_asset_details = True
+                        # It's generally better to let Streamlit manage query_params.
+                        # Clearing them programmatically can be tricky and might not always behave as expected.
+                        # If show_asset_details is True, the modal will show. User interaction will then drive state.
+                    else:
+                        st.warning(f"Asset '{asset_name_from_query}' specified in URL not found.")
+                except Exception as e:
+                    logger.error(f"Error processing view_asset query param: {e}")
+                    st.error("Failed to process asset view request from URL.")
+
             # Check and install dependencies first
             self.check_and_install_dependencies()
             
@@ -1000,6 +1268,7 @@ class ITAssetDashboard:
             apply_windows11_theme()
             
             # Load data if not already loaded or if refresh is triggered
+            # (also handles case where query_param logic didn't load it and it's still empty)
             if not st.session_state.assets_data or 'refresh_trigger' in st.session_state:
                 if 'refresh_trigger' in st.session_state:
                     del st.session_state['refresh_trigger'] # consume trigger
@@ -1020,22 +1289,146 @@ class ITAssetDashboard:
             # Render sidebar filters
             filters = self.render_sidebar_filters()
 
-            # Apply filters
-            filtered_assets = self.filter_assets(filters)
+            # Display active filters as dismissible pills
+            if st.session_state.assets_data and filters:
+                # Calculate default values for comparison
+                # all_asset_names_list = list(st.session_state.assets_data.keys()) # No longer needed for pills
+                all_os_versions_set = set()
+                all_manufacturers_set = set()
+                all_ram_values_list = []
+                all_storage_values_list = []
+
+                for asset in st.session_state.assets_data.values():
+                    if 'os_info' in asset and asset['os_info'].get('version'):
+                        all_os_versions_set.add(self.normalize_os_version(asset['os_info']['version']))
+                    if 'system_info' in asset and asset['system_info'].get('manufacturer'):
+                        all_manufacturers_set.add(asset['system_info']['manufacturer'])
+                    memory_gb = asset.get('hardware_info', {}).get('memory', {}).get('total_gb', 0)
+                    if memory_gb:
+                        all_ram_values_list.append(int(memory_gb))
+                    c_drive_free = self.get_c_drive_free_space(asset)
+                    if c_drive_free is not None:
+                        all_storage_values_list.append(c_drive_free)
+
+                default_min_ram = min(all_ram_values_list) if all_ram_values_list else 0
+                default_max_ram = max(all_ram_values_list) if all_ram_values_list else 128
+                default_min_storage = 0.0
+                default_max_storage = max(all_storage_values_list) if all_storage_values_list else 500.0
+
+                active_pills_data = [] # Store tuples of (pill_text, dismiss_key, dismiss_action_args)
+
+                # "Selected Assets" pill logic removed.
+
+                # OS Filters (Individual pills for each selected OS if not all are selected)
+                if len(st.session_state.selected_os_filter) != len(all_os_versions_set):
+                    for os_name in st.session_state.selected_os_filter:
+                        active_pills_data.append((f"OS: {os_name}", f"dismiss_os_{os_name}", {"type": "os", "value": os_name}))
+
+                # Manufacturer Filters (Individual pills)
+                if len(st.session_state.selected_manufacturers_filter) != len(all_manufacturers_set):
+                    for manuf_name in st.session_state.selected_manufacturers_filter:
+                        active_pills_data.append((f"Manuf: {manuf_name}", f"dismiss_manuf_{manuf_name}", {"type": "manufacturer", "value": manuf_name}))
+
+                # RAM Range
+                current_ram_filter = st.session_state.ram_range_filter
+                if current_ram_filter and (current_ram_filter[0] != default_min_ram or current_ram_filter[1] != default_max_ram):
+                    active_pills_data.append((f"RAM: {current_ram_filter[0]}-{current_ram_filter[1]} GB", "dismiss_ram", {"type": "ram_range"}))
+
+                # Storage Range
+                current_storage_filter = st.session_state.storage_range_filter
+                if current_storage_filter and (current_storage_filter[0] != default_min_storage or current_storage_filter[1] != default_max_storage):
+                     active_pills_data.append((f"Storage: {current_storage_filter[0]:.1f}-{current_storage_filter[1]:.1f} GB", "dismiss_storage", {"type": "storage_range"}))
+
+                # Low Storage
+                if st.session_state.show_low_storage_only:
+                    active_pills_data.append(("Status: Low Storage", "dismiss_low_storage", {"type": "show_low_storage"}))
+
+                # AnyDesk ID
+                if st.session_state.anydesk_search_filter:
+                    active_pills_data.append((f"AnyDesk: {st.session_state.anydesk_search_filter}", "dismiss_anydesk", {"type": "anydesk_search"}))
+
+                # General Search
+                if st.session_state.search_term_filter:
+                    active_pills_data.append((f"Search: \"{st.session_state.search_term_filter}\"", "dismiss_search", {"type": "search_term"}))
+
+                if active_pills_data:
+                    st.markdown('<div class="filter-pill-container">', unsafe_allow_html=True)
+                    # Max pills per row roughly
+                    pills_per_row_approx = 4
+                    num_rows = (len(active_pills_data) + pills_per_row_approx - 1) // pills_per_row_approx
+
+                    for i in range(num_rows):
+                        cols = st.columns(pills_per_row_approx)
+                        for j in range(pills_per_row_approx):
+                            pill_index = i * pills_per_row_approx + j
+                            if pill_index < len(active_pills_data):
+                                pill_text, dismiss_key, action_args = active_pills_data[pill_index]
+                                with cols[j]:
+                                    st.markdown(f'<div class="filter-pill"><span>{pill_text}</span>', unsafe_allow_html=True)
+                                    if st.button("×", key=dismiss_key, help=f"Remove {pill_text} filter"):
+                                        filter_type = action_args["type"]
+                                        if filter_type == "os":
+                                            st.session_state.selected_os_filter.remove(action_args["value"])
+                                            if not st.session_state.selected_os_filter: # If empty, reset to all (or handle as needed)
+                                                 st.session_state.selected_os_filter = sorted(list(all_os_versions_set)) if all_os_versions_set else []
+                                        elif filter_type == "manufacturer":
+                                            st.session_state.selected_manufacturers_filter.remove(action_args["value"])
+                                            if not st.session_state.selected_manufacturers_filter:
+                                                st.session_state.selected_manufacturers_filter = sorted(list(all_manufacturers_set)) if all_manufacturers_set else []
+                                        elif filter_type == "ram_range":
+                                            st.session_state.ram_range_filter = None # Will be reset to default in sidebar
+                                        elif filter_type == "storage_range":
+                                            st.session_state.storage_range_filter = None # Will be reset to default in sidebar
+                                        elif filter_type == "show_low_storage":
+                                            st.session_state.show_low_storage_only = False
+                                        elif filter_type == "anydesk_search":
+                                            st.session_state.anydesk_search_filter = ""
+                                        elif filter_type == "search_term":
+                                            st.session_state.search_term_filter = ""
+                                        st.rerun()
+                                    st.markdown('</div>', unsafe_allow_html=True) # Close filter-pill div
+                    st.markdown('</div>', unsafe_allow_html=True) # Close filter-pill-container
+
+            # Apply filters using the session state values that back the widgets
+            current_filters_for_logic = {
+                # 'selected_assets': st.session_state.selected_assets_filter, # Removed
+                'selected_os': st.session_state.selected_os_filter,
+                'selected_manufacturers': st.session_state.selected_manufacturers_filter,
+                'min_ram': st.session_state.ram_range_filter[0] if st.session_state.ram_range_filter else default_min_ram,
+                'max_ram': st.session_state.ram_range_filter[1] if st.session_state.ram_range_filter else default_max_ram,
+                'min_storage': st.session_state.storage_range_filter[0] if st.session_state.storage_range_filter else default_min_storage,
+                'max_storage': st.session_state.storage_range_filter[1] if st.session_state.storage_range_filter else default_max_storage,
+                'show_low_storage': st.session_state.show_low_storage_only,
+                'anydesk_search': st.session_state.anydesk_search_filter,
+                'search_term': st.session_state.search_term_filter
+            }
+            filtered_assets = self.filter_assets(current_filters_for_logic)
 
             # Render asset details modal if open
-            self.render_asset_details_modal(filtered_assets)
+            self.render_asset_details_modal(filtered_assets) # Modal can be rendered early
 
-            # Render main content
-            if filtered_assets:
-                self.render_asset_bubbles(filtered_assets)
-                st.divider()
-                self.render_overview_metrics(filtered_assets)
+            # --- Summary Metrics and Charts Section (Conditional) ---
+            if st.session_state.get('show_summary_section', True):
+                st.markdown('<div class="summary-charts-container">', unsafe_allow_html=True)
+                self.render_overview_metrics(filtered_assets) # Metrics first
                 st.divider()
                 self.render_system_statistics(filtered_assets)
+                self.render_status_distribution_chart(filtered_assets)
+                st.markdown('</div>', unsafe_allow_html=True)
                 st.divider()
-                self.render_asset_details(filtered_assets)
+
+            # Render main content - Asset Bubbles and Details Table (Conditional)
+            if filtered_assets:
+                if st.session_state.get('show_bubbles_section', True):
+                    self.render_asset_bubbles(filtered_assets)
+                    # Show divider only if both bubbles and table are shown, or if bubbles are hidden and table is shown
+                    if st.session_state.get('show_details_table_section', True):
+                         st.divider()
+
+                if st.session_state.get('show_details_table_section', True):
+                    self.render_asset_details(filtered_assets)
             else:
+                # This part remains, showing welcome/no assets message
                 if st.session_state.assets_data: # Check if assets were loaded but all filtered out
                     st.warning("No assets match the current filter criteria. Please adjust your filters.")
                 else:
