@@ -1,4 +1,5 @@
 import streamlit as st
+import urllib.parse # Added import
 import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
@@ -66,30 +67,7 @@ def apply_windows11_theme():
         padding-top: 0px; /* Reduced top padding */
     }}
 
-    /* Asset Name Button Styling */
-    .asset-name-button button {{
-        background-color: transparent;
-        color: {text_color}; /* Use theme's text color */
-        border: none;
-        padding: 0;
-        text-align: left;
-        font-weight: 600; /* Same as asset-name */
-        font-size: 16px; /* Same as asset-name */
-        text-overflow: ellipsis;
-        overflow: hidden;
-        white-space: nowrap;
-        display: block; /* To allow width to be controlled */
-        width: 100%; /* Make button take full width of its container cell */
-    }}
-    .asset-name-button button:hover {{
-        text-decoration: underline;
-        color: {hover_color}; /* Use theme's hover color for text */
-        background-color: transparent; /* Ensure no background on hover */
-    }}
-    .asset-name-button button:focus {{
-        outline: none !important;
-        box-shadow: none !important;
-    }}
+    /* Removed .asset-name-button styles */
     
     .asset-bubble {{
         background-color: {card_color}; /* Use card_color for background */
@@ -118,14 +96,27 @@ def apply_windows11_theme():
     .status-indicator-scanning {{ border-left-color: #777777 !important; }}
     .status-indicator-pending {{ border-left-color: #F0AD4E !important; }}
     .status-indicator-failed {{ border-left-color: #D9534F !important; }}
-    
-    .asset-name {{
-        font-size: 16px; /* This will be overridden by asset-name-button for the button itself */
-        font-weight: 600; /* This will be overridden by asset-name-button for the button itself */
-        margin-bottom: 4px;
-        text-overflow: ellipsis;
-        overflow: hidden;
-        white-space: nowrap;
+
+    .asset-bubble-content {{
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        height: 100%;
+    }}
+
+    .asset-header {{
+        margin-bottom: 8px;
+    }}
+
+    .asset-name-link {{
+        font-size: 16px;
+        font-weight: 600;
+        text-decoration: none;
+        color: {text_color};
+    }}
+    .asset-name-link:hover {{
+        text-decoration: underline;
+        color: {hover_color};
     }}
     
     .asset-ip {{
@@ -253,6 +244,17 @@ def apply_windows11_theme():
     .filter-pill .stButton button:focus {{
         outline: none !important;
         box-shadow: none !important;
+    }}
+
+    .asset-details-group {{
+        margin-bottom: 8px;
+    }}
+
+    .asset-footer-group {{
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        font-size: 12px;
     }}
 
     .summary-charts-container {{
@@ -837,29 +839,26 @@ class ITAssetDashboard:
                     self.render_single_asset_bubble(name, asset)
     
     def render_single_asset_bubble(self, name, asset):
-        """Render a single asset bubble with new design"""
-        # Extract asset information
+        """Render a single asset bubble with new HTML structure and link-based navigation."""
         ip_address = asset.get('network_info', {}).get('ip_address', 'No IP')
-        os_version = self.normalize_os_version(asset.get('os_info', {}).get('version', 'Unknown'))
+        os_version = self.normalize_os_version(asset.get('os_info', {}).get('version', 'Unknown OS'))
         memory_gb = asset.get('hardware_info', {}).get('memory', {}).get('total_gb', 0)
         memory_display = f"{int(memory_gb)} GB" if memory_gb else "N/A"
         anydesk_id = asset.get('anydesk_id', '')
-        if anydesk_id == "ID": # If "ID" is an explicitly bad value
-            anydesk_id = ""
+        if anydesk_id == "ID": anydesk_id = ""
 
         network_info = asset.get('network_info', {})
         status = network_info.get('status', 'unknown')
         nmap_scan_status = network_info.get('nmap_scan_status', 'unknown')
         
         c_drive_free_gb = self.get_c_drive_free_space(asset)
-        c_drive_display = f"C: {c_drive_free_gb:.1f} GB free" if c_drive_free_gb is not None else "C: N/A"
+        c_drive_display = f"{c_drive_free_gb:.1f} GB free" if c_drive_free_gb is not None else "N/A"
         low_storage = c_drive_free_gb is not None and c_drive_free_gb < 10
-        
+
         anydesk_html_link = ""
         if anydesk_id:
             anydesk_html_link = f'<a href="anydesk:{anydesk_id}" class="anydesk-link" target="_blank">AnyDesk: {anydesk_id}</a>'
 
-        # Determine status display classes and text (no emojis)
         status_indicator_class = ""
         status_text_class = ""
         plain_status_text = ""
@@ -880,47 +879,37 @@ class ITAssetDashboard:
             plain_status_text = "Online"
             status_indicator_class = "status-indicator-online"
             status_text_class = "status-online"
-        else: # Covers 'offline', 'unknown', 'error'
+        else:
             plain_status_text = "Offline"
             status_indicator_class = "status-indicator-offline"
             status_text_class = "status-offline"
         
         storage_class = "low-storage" if low_storage else ""
-        bubble_classes = ["asset-bubble", status_indicator_class, storage_class]
-        final_bubble_class = " ".join(filter(None, set(bubble_classes)))
+        bubble_classes_list = ["asset-bubble", status_indicator_class, storage_class]
+        final_bubble_class = " ".join(filter(None, set(bubble_classes_list)))
         
-        # Construct the bubble content in parts using st.markdown and st.button
-        
-        # Outer div for the bubble with status border and potential low storage background
-        st.markdown(f'<div class="{final_bubble_class}">', unsafe_allow_html=True)
-        
-        # Div to contain the button, styled by .asset-name-button
-        st.markdown('<div class="asset-name-button">', unsafe_allow_html=True)
-        if st.button(name, key=f"asset_btn_{name}", help="Click to view details"):
-            st.session_state.selected_asset_for_details = name
-            st.session_state.show_asset_details = True
-            st.rerun()
-        st.markdown('</div>', unsafe_allow_html=True) # Close asset-name-button div
+        name_url_encoded = urllib.parse.quote(name)
 
-        # Div for the rest of the details (IP, OS, RAM, Storage)
-        st.markdown(f"""
-        <div class="asset-details-group">
-            <div class="asset-ip">{ip_address}</div>
-            <div class="asset-os">{os_version}</div>
-            <div class="asset-ram">{memory_display}</div>
-            <div class="asset-storage">{c_drive_display}</div>
+        bubble_html = f"""
+        <div class="{final_bubble_class}">
+            <div class="asset-bubble-content">
+                <div class="asset-header">
+                    <a class="asset-name-link" href="/?view_asset={name_url_encoded}" target="_self">{name}</a>
+                    <div class="asset-ip">{ip_address}</div>
+                </div>
+                <div class="asset-details-group">
+                    <div>🖥️ OS: {os_version}</div>
+                    <div>💾 RAM: {memory_display}</div>
+                    <div>💽 Storage (C:): {c_drive_display}</div>
+                </div>
+                <div class="asset-footer-group">
+                    <span class="{status_text_class}">{plain_status_text}</span>
+                    {anydesk_html_link}
+                </div>
+            </div>
         </div>
-        """, unsafe_allow_html=True)
-
-        # Div for the footer (status text and AnyDesk link)
-        st.markdown(f"""
-        <div class="asset-footer-group">
-            <div class="{status_text_class}">{plain_status_text}</div>
-            {anydesk_html_link}
-        </div>
-        """, unsafe_allow_html=True)
-
-        st.markdown('</div>', unsafe_allow_html=True) # Close the main asset-bubble div
+        """
+        st.markdown(bubble_html, unsafe_allow_html=True)
 
     def render_status_distribution_chart(self, assets):
         """Render pie chart for asset status distribution."""
@@ -1202,6 +1191,27 @@ class ITAssetDashboard:
     def run(self):
         """Main application entry point"""
         try:
+            # Query param processing for direct asset view
+            if 'view_asset' in st.query_params:
+                try:
+                    # Ensure assets_data is loaded before checking query_params related to it.
+                    if not st.session_state.assets_data: # Initial load might be needed
+                        with st.spinner("Loading asset data..."):
+                             st.session_state.assets_data = self.load_assets_data()
+
+                    asset_name_from_query = urllib.parse.unquote(st.query_params['view_asset'])
+                    if asset_name_from_query in st.session_state.assets_data:
+                        st.session_state.selected_asset_for_details = asset_name_from_query
+                        st.session_state.show_asset_details = True
+                        # It's generally better to let Streamlit manage query_params.
+                        # Clearing them programmatically can be tricky and might not always behave as expected.
+                        # If show_asset_details is True, the modal will show. User interaction will then drive state.
+                    else:
+                        st.warning(f"Asset '{asset_name_from_query}' specified in URL not found.")
+                except Exception as e:
+                    logger.error(f"Error processing view_asset query param: {e}")
+                    st.error("Failed to process asset view request from URL.")
+
             # Check and install dependencies first
             self.check_and_install_dependencies()
             
@@ -1209,6 +1219,7 @@ class ITAssetDashboard:
             apply_windows11_theme()
             
             # Load data if not already loaded or if refresh is triggered
+            # (also handles case where query_param logic didn't load it and it's still empty)
             if not st.session_state.assets_data or 'refresh_trigger' in st.session_state:
                 if 'refresh_trigger' in st.session_state:
                     del st.session_state['refresh_trigger'] # consume trigger
