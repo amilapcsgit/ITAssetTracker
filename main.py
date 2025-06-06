@@ -420,8 +420,28 @@ class ITAssetDashboard:
         pass
 
     def render_header(self):
-        # ... (implementation unchanged) ...
-        pass
+        """Render the main header with title and refresh button"""
+        col1, col2, col3, col4 = st.columns([3, 1, 1, 1])
+
+        with col1:
+            st.markdown('<p class="main-title">🖥️ IT Asset Management Dashboard</p>', unsafe_allow_html=True)
+            if st.session_state.last_refresh:
+                st.markdown(f'<p class="caption-text">Last updated: {st.session_state.last_refresh.strftime("%Y-%m-%d %H:%M:%S")}</p>', unsafe_allow_html=True)
+
+        with col2:
+            # Theme toggle
+            if st.button("🌓 Toggle Theme"):
+                st.session_state.theme_mode = 'dark' if st.session_state.theme_mode == 'light' else 'light'
+                st.rerun()
+
+        with col3:
+            if st.button("Refresh Data 🔄"): # Changed button text and logic
+                st.session_state.refresh_trigger = True
+                st.rerun()
+
+        with col4:
+            asset_count = len(st.session_state.assets_data)
+            st.metric("Total Assets", asset_count)
 
     def render_sidebar_filters(self):
         # ... (implementation unchanged by this subtask, but uses updated session state) ...
@@ -619,16 +639,170 @@ class ITAssetDashboard:
         pass # Placeholder for brevity
 
     def render_overview_metrics(self, assets):
-        # ... (implementation unchanged) ...
-        pass # Placeholder for brevity
+        """Render overview metrics cards"""
+        if not assets:
+            st.warning("No assets match the current filters.")
+            return
+
+        st.subheader("Dashboard Metrics") # Added subheader
+        col1, col2, col3, col4 = st.columns(4)
+
+        # Calculate metrics
+        total_assets = len(assets)
+        online_assets = sum(1 for asset in assets.values()
+                          if asset.get('network_info', {}).get('status') == 'online')
+
+        os_distribution = {}
+        ram_total = 0
+        storage_total = 0
+
+        for asset in assets.values():
+            # OS distribution
+            os_version = asset.get('os_info', {}).get('version', 'Unknown')
+            os_distribution[os_version] = os_distribution.get(os_version, 0) + 1
+
+            # RAM total (convert to GB if needed)
+            ram_info = asset.get('hardware_info', {}).get('memory', {})
+            if isinstance(ram_info, dict) and 'total_gb' in ram_info:
+                ram_total += ram_info['total_gb']
+
+            # Storage total
+            storage_info = asset.get('hardware_info', {}).get('storage', [])
+            if isinstance(storage_info, list):
+                for drive in storage_info:
+                    if isinstance(drive, dict) and 'size_gb' in drive:
+                        storage_total += drive['size_gb']
+
+        with col1:
+            st.metric("Total Assets", total_assets)
+
+        with col2:
+            st.metric("Online Assets", online_assets, delta=f"{online_assets}/{total_assets}")
+
+        with col3:
+            st.metric("Total RAM", f"{ram_total:.1f} GB" if ram_total > 0 else "N/A")
+
+        with col4:
+            st.metric("Total Storage", f"{storage_total:.1f} GB" if storage_total > 0 else "N/A")
 
     def render_asset_details(self, assets):
-        # ... (implementation unchanged) ...
-        pass # Placeholder for brevity
+        """Render detailed asset information in a table"""
+        logger.info(f"render_asset_details: Received assets. Count: {len(assets) if assets else 'None or empty'}")
+
+        if not assets:
+            logger.warning("render_asset_details: No assets data provided or assets are empty.")
+            st.warning("No asset data available to display details.")
+            return
+
+        st.subheader("Asset Details")
+
+        table_data = []
+        try:
+            logger.info("render_asset_details: Starting preparation of table_data.")
+            for name, asset in assets.items():
+                try:
+                    row = {
+                        'Computer Name': name,
+                        'IP Address': asset.get('network_info', {}).get('ip_address', 'N/A'),
+                        'OS': asset.get('os_info', {}).get('version', 'N/A'),
+                        'Manufacturer': asset.get('system_info', {}).get('manufacturer', 'N/A'),
+                        'Model': asset.get('system_info', {}).get('model', 'N/A'),
+                        'RAM (GB)': asset.get('hardware_info', {}).get('memory', {}).get('total_gb', 'N/A'),
+                        'CPU': asset.get('hardware_info', {}).get('processor', {}).get('name', 'N/A'),
+                        'Status': asset.get('network_info', {}).get('status', 'Unknown')
+                    }
+                    table_data.append(row)
+                except Exception as e:
+                    logger.error(f"render_asset_details: Error processing asset '{name}': {str(e)}")
+                    # Optionally, add a placeholder row or skip
+            logger.info(f"render_asset_details: table_data preparation complete. Number of rows: {len(table_data)}")
+            if not table_data:
+                logger.warning("render_asset_details: table_data is empty after processing assets.")
+                st.info("No data could be prepared for the asset details table.")
+                return
+        except Exception as e:
+            logger.error(f"render_asset_details: Error during table_data preparation loop: {str(e)}")
+            st.error("An error occurred while preparing asset data for display.")
+            return
+
+        try:
+            logger.info("render_asset_details: Creating DataFrame from table_data.")
+            df = pd.DataFrame(table_data)
+            logger.info(f"render_asset_details: DataFrame created. Shape: {df.shape}. Head: {df.head().to_string() if not df.empty else 'Empty DataFrame'}")
+        except Exception as e:
+            logger.error(f"render_asset_details: Failed to create DataFrame: {str(e)}")
+            st.error("Failed to create the data table for asset details.")
+            return
+
+        if not df.empty:
+            try:
+                logger.info("render_asset_details: Converting DataFrame to CSV.")
+                csv = df.to_csv(index=False)
+                logger.info("render_asset_details: CSV conversion successful.")
+
+                logger.info("render_asset_details: Preparing download button.")
+                st.download_button(
+                    label="📥 Download Asset Report (CSV)",
+                    data=csv,
+                    file_name=f"asset_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                    mime="text/csv",
+                    key="download_asset_report_csv" # Added a key for robustness
+                )
+                logger.info("render_asset_details: Download button prepared.")
+            except Exception as e:
+                logger.error(f"render_asset_details: Failed to convert DataFrame to CSV or prepare download button: {str(e)}")
+                # Still display the table if CSV fails
+        else:
+            logger.info("render_asset_details: DataFrame is empty, skipping CSV conversion and download button.")
+            st.info("No data available in the table to download as CSV.") # Inform user
+
+        try:
+            logger.info("render_asset_details: Displaying DataFrame.")
+            st.dataframe(df, use_container_width=True)
+            logger.info("render_asset_details: DataFrame displayed successfully.")
+        except Exception as e:
+            logger.error(f"render_asset_details: Failed to display DataFrame: {str(e)}")
+            st.error("Failed to display the asset details table.")
 
     def render_system_statistics(self, assets):
-        # ... (implementation unchanged) ...
-        pass # Placeholder for brevity
+        """Render system statistics with pie charts"""
+        st.subheader("System Statistics")
+
+        col1, col2 = st.columns(2)
+
+        with col1:
+            # OS Distribution
+            os_data = {}
+            for asset in assets.values():
+                os_version = self.normalize_os_version(asset.get('os_info', {}).get('version', 'Unknown'))
+                os_data[os_version] = os_data.get(os_version, 0) + 1
+
+            if os_data:
+                fig_os = px.pie(
+                    values=list(os_data.values()),
+                    names=list(os_data.keys()),
+                    title="Operating System Distribution",
+                    color_discrete_sequence=px.colors.qualitative.Set3
+                )
+                fig_os.update_traces(textposition='inside', textinfo='percent+label')
+                st.plotly_chart(fig_os, use_container_width=True)
+
+        with col2:
+            # Manufacturer Distribution
+            manufacturer_data = {}
+            for asset in assets.values():
+                manufacturer = asset.get('system_info', {}).get('manufacturer', 'Unknown')
+                manufacturer_data[manufacturer] = manufacturer_data.get(manufacturer, 0) + 1
+
+            if manufacturer_data:
+                fig_mfg = px.pie(
+                    values=list(manufacturer_data.values()),
+                    names=list(manufacturer_data.keys()),
+                    title="System Manufacturer Distribution",
+                    color_discrete_sequence=px.colors.qualitative.Set2
+                )
+                fig_mfg.update_traces(textposition='inside', textinfo='percent+label')
+                st.plotly_chart(fig_mfg, use_container_width=True)
 
     def run(self):
         """Main application entry point"""
