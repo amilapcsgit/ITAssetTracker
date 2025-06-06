@@ -7,6 +7,8 @@ import json
 import logging
 from datetime import datetime
 import os
+import subprocess
+import re
 
 from asset_parser import AssetParser
 from dashboard_components import DashboardComponents
@@ -58,7 +60,6 @@ def apply_windows11_theme():
         padding: 16px;
         margin: 8px;
         color: white;
-        cursor: pointer;
         transition: all 0.3s ease;
         box-shadow: 0 2px 8px rgba(0,0,0,0.1);
         min-height: 140px;
@@ -183,6 +184,78 @@ class ITAssetDashboard:
             st.session_state.selected_asset_for_details = None
         if 'show_low_storage_only' not in st.session_state:
             st.session_state.show_low_storage_only = False
+        if 'nmap_enabled' not in st.session_state:
+            st.session_state.nmap_enabled = False
+        if 'nmap_path' not in st.session_state:
+            st.session_state.nmap_path = "nmap"
+
+    def _run_nmap_scan(self, ip_address: str, nmap_executable_path: str = "nmap") -> dict:
+        """Run nmap scan on a given IP address and parse results."""
+        result = {
+            "status": "unknown",
+            "mac_address": None,
+            "nmap_output": "",
+            "error_message": None
+        }
+        logger.info(f"Starting nmap scan for IP: {ip_address}")
+        try:
+            # -Pn: Treat host as online (skip host discovery)
+            # -T4: Aggressive timing
+            # -A: Enable OS detection, version detection, script scanning, and traceroute
+            # -v: Verbose
+            process = subprocess.run(
+                [nmap_executable_path, "-T4", "-A", "-v", "-Pn", ip_address],
+                capture_output=True,
+                text=True,
+                timeout=120  # 120 seconds timeout
+            )
+            result["nmap_output"] = process.stdout
+
+            if process.returncode == 0:
+                logger.info(f"Nmap scan for {ip_address} successful.")
+                # Check for host status
+                if "Host seems down" in process.stdout:
+                    result["status"] = "offline"
+                    logger.info(f"Nmap scan for {ip_address}: Host seems down.")
+                elif "Host is up" in process.stdout:
+                    result["status"] = "online"
+                    logger.info(f"Nmap scan for {ip_address}: Host is up.")
+                else:
+                    # Check if any ports are open as an indication of being online
+                    if re.search(r"\d+/open/", process.stdout):
+                        result["status"] = "online"
+                        logger.info(f"Nmap scan for {ip_address}: Host is up (open ports found).")
+                    else:
+                        result["status"] = "offline" # Default to offline if no clear "up" signal
+                        logger.info(f"Nmap scan for {ip_address}: Host status unclear, assuming offline.")
+
+
+                # Parse MAC address
+                mac_match = re.search(r"MAC Address: ([0-9A-Fa-f:]{17})", process.stdout)
+                if mac_match:
+                    result["mac_address"] = mac_match.group(1)
+                    logger.info(f"Nmap scan for {ip_address}: MAC Address found: {result['mac_address']}")
+                else:
+                    logger.info(f"Nmap scan for {ip_address}: MAC Address not found in output.")
+            else:
+                result["status"] = "error"
+                result["error_message"] = f"Nmap scan failed with return code {process.returncode}. Error: {process.stderr}"
+                logger.error(f"Nmap scan for {ip_address} failed. STDERR: {process.stderr}")
+
+        except FileNotFoundError:
+            result["status"] = "error"
+            result["error_message"] = f"Nmap command not found at '{nmap_executable_path}'. Please ensure nmap is installed and the path is correct."
+            logger.error(f"Nmap command not found at '{nmap_executable_path}' during scan attempt.")
+        except subprocess.TimeoutExpired:
+            result["status"] = "error"
+            result["error_message"] = f"Nmap scan for {ip_address} timed out."
+            logger.error(f"Nmap scan for {ip_address} timed out.")
+        except Exception as e:
+            result["status"] = "error"
+            result["error_message"] = f"An unexpected error occurred during nmap scan: {str(e)}"
+            logger.error(f"Unexpected error during nmap scan for {ip_address}: {str(e)}")
+
+        return result
 
     def load_assets_data(self):
         """Load and parse all asset files from the assets folder"""
@@ -203,12 +276,37 @@ class ITAssetDashboard:
                 try:
                     asset_data = self.asset_parser.parse_asset_file(file_path)
                     if asset_data:
+                        # Nmap integration
+                        ip_address = asset_data.get('network_info', {}).get('ip_address')
+
+                        if st.session_state.nmap_enabled and ip_address and ip_address != 'N/A':
+                            logger.info(f"Attempting nmap scan for asset {asset_data.get('computer_name', file_path.stem)} at IP {ip_address} using nmap path: {st.session_state.nmap_path}")
+                            nmap_result = self._run_nmap_scan(ip_address, nmap_executable_path=st.session_state.nmap_path)
+
+                            # Ensure network_info dictionary exists
+                            if 'network_info' not in asset_data:
+                                asset_data['network_info'] = {}
+
+                            # Merge nmap results, potentially overwriting parser results for status and MAC
+                            asset_data['network_info']['status'] = nmap_result.get('status', asset_data['network_info'].get('status', 'unknown'))
+                            if nmap_result.get('mac_address'): # Prioritize nmap MAC address
+                                asset_data['network_info']['mac_address'] = nmap_result.get('mac_address')
+                            asset_data['network_info']['nmap_scan_output'] = nmap_result.get('nmap_output')
+                            asset_data['network_info']['nmap_error'] = nmap_result.get('error_message')
+
+                            if nmap_result.get('error_message'):
+                                logger.warning(f"Nmap scan for {ip_address} (Asset: {asset_data.get('computer_name', file_path.stem)}) encountered an error: {nmap_result.get('error_message')}")
+                            else:
+                                logger.info(f"Nmap scan for {ip_address} (Asset: {asset_data.get('computer_name', file_path.stem)}) completed. Status: {nmap_result.get('status')}")
+                        elif not ip_address or ip_address == 'N/A':
+                            logger.info(f"Skipping nmap scan for asset {asset_data.get('computer_name', file_path.stem)} due to missing IP address.")
+
                         assets_data[asset_data.get('computer_name', file_path.stem)] = asset_data
-                        logger.info(f"Successfully parsed {file_path.name}")
+                        logger.info(f"Successfully processed {file_path.name} (including nmap if applicable).")
                     else:
                         logger.warning(f"No data extracted from {file_path.name}")
                 except Exception as e:
-                    logger.error(f"Error parsing {file_path.name}: {str(e)}")
+                    logger.error(f"Error processing file {file_path.name} in load_assets_data: {str(e)}")
                     continue
 
             st.session_state.last_refresh = datetime.now()
@@ -420,6 +518,25 @@ class ITAssetDashboard:
             help="Search across all asset properties"
         )
 
+        # Nmap Settings
+        st.sidebar.subheader("Network Scanning (Nmap)")
+        nmap_enabled_ui = st.sidebar.checkbox(
+            "Enable Nmap Scans",
+            value=st.session_state.nmap_enabled,
+            help="Scan assets with nmap for live status and MAC address. Can significantly increase data loading times."
+        )
+        if nmap_enabled_ui != st.session_state.nmap_enabled:
+            st.session_state.nmap_enabled = nmap_enabled_ui
+            # No rerun needed, will be picked up on next data load or refresh
+
+        nmap_path_ui = st.sidebar.text_input(
+            "Nmap Path",
+            value=st.session_state.nmap_path,
+            help="Path to nmap executable (e.g., '/usr/bin/nmap' or 'C:\\Program Files (x86)\\Nmap\\nmap.exe'). Default is 'nmap' (assumes it's in system PATH)."
+        )
+        if nmap_path_ui != st.session_state.nmap_path:
+            st.session_state.nmap_path = nmap_path_ui
+
         return {
             'selected_assets': selected_assets,
             'selected_os': selected_os,
@@ -430,7 +547,9 @@ class ITAssetDashboard:
             'max_storage': max_storage,
             'show_low_storage': show_low_storage,
             'anydesk_search': anydesk_search,
-            'search_term': search_term
+            'search_term': search_term,
+            'nmap_enabled': st.session_state.nmap_enabled, # Pass current state
+            'nmap_path': st.session_state.nmap_path         # Pass current state
         }
 
     def filter_assets(self, filters):
@@ -516,6 +635,9 @@ class ITAssetDashboard:
         memory_gb = asset.get('hardware_info', {}).get('memory', {}).get('total_gb', 0)
         memory_display = f"{int(memory_gb)} GB" if memory_gb else "N/A"
         anydesk_id = asset.get('anydesk_id', '')
+        # If "ID" is an explicitly bad value, treat it as if no ID was found.
+        if anydesk_id == "ID":
+            anydesk_id = ""
         status = asset.get('network_info', {}).get('status', 'unknown')
         
         # Extract C Drive free space
@@ -702,39 +824,76 @@ class ITAssetDashboard:
 
     def render_asset_details(self, assets):
         """Render detailed asset information in a table"""
+        logger.info(f"render_asset_details: Received assets. Count: {len(assets) if assets else 'None or empty'}")
+
         if not assets:
+            logger.warning("render_asset_details: No assets data provided or assets are empty.")
+            st.warning("No asset data available to display details.")
             return
 
         st.subheader("Asset Details")
         
-        # Prepare data for the table
         table_data = []
-        for name, asset in assets.items():
-            row = {
-                'Computer Name': name,
-                'IP Address': asset.get('network_info', {}).get('ip_address', 'N/A'),
-                'OS': asset.get('os_info', {}).get('version', 'N/A'),
-                'Manufacturer': asset.get('system_info', {}).get('manufacturer', 'N/A'),
-                'Model': asset.get('system_info', {}).get('model', 'N/A'),
-                'RAM (GB)': asset.get('hardware_info', {}).get('memory', {}).get('total_gb', 'N/A'),
-                'CPU': asset.get('hardware_info', {}).get('processor', {}).get('name', 'N/A'),
-                'Status': asset.get('network_info', {}).get('status', 'Unknown')
-            }
-            table_data.append(row)
+        try:
+            logger.info("render_asset_details: Starting preparation of table_data.")
+            for name, asset in assets.items():
+                try:
+                    row = {
+                        'Computer Name': name,
+                        'IP Address': asset.get('network_info', {}).get('ip_address', 'N/A'),
+                        'OS': asset.get('os_info', {}).get('version', 'N/A'),
+                        'Manufacturer': asset.get('system_info', {}).get('manufacturer', 'N/A'),
+                        'Model': asset.get('system_info', {}).get('model', 'N/A'),
+                        'RAM (GB)': asset.get('hardware_info', {}).get('memory', {}).get('total_gb', 'N/A'),
+                        'CPU': asset.get('hardware_info', {}).get('processor', {}).get('name', 'N/A'),
+                        'Status': asset.get('network_info', {}).get('status', 'Unknown')
+                    }
+                    table_data.append(row)
+                except Exception as e:
+                    logger.error(f"render_asset_details: Error processing asset '{name}': {str(e)}")
+                    # Optionally, add a placeholder row or skip
+            logger.info(f"render_asset_details: table_data preparation complete. Number of rows: {len(table_data)}")
+            if not table_data:
+                logger.warning("render_asset_details: table_data is empty after processing assets.")
+                st.info("No data could be prepared for the asset details table.")
+                return
+        except Exception as e:
+            logger.error(f"render_asset_details: Error during table_data preparation loop: {str(e)}")
+            st.error("An error occurred while preparing asset data for display.")
+            return
+
+        try:
+            logger.info("render_asset_details: Creating DataFrame from table_data.")
+            df = pd.DataFrame(table_data)
+            logger.info(f"render_asset_details: DataFrame created. Shape: {df.shape}. Head: {df.head().to_string() if not df.empty else 'Empty DataFrame'}")
+        except Exception as e:
+            logger.error(f"render_asset_details: Failed to create DataFrame: {str(e)}")
+            st.error("Failed to create the data table for asset details.")
+            return
         
-        df = pd.DataFrame(table_data)
-        
-        # Add download button
-        csv = df.to_csv(index=False)
-        st.download_button(
-            label="📥 Download Asset Report (CSV)",
-            data=csv,
-            file_name=f"asset_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-            mime="text/csv"
-        )
-        
-        # Display the table
-        st.dataframe(df, use_container_width=True)
+        try:
+            logger.info("render_asset_details: Converting DataFrame to CSV.")
+            csv = df.to_csv(index=False)
+            logger.info("render_asset_details: CSV conversion successful.")
+
+            st.download_button(
+                label="📥 Download Asset Report (CSV)",
+                data=csv,
+                file_name=f"asset_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                mime="text/csv"
+            )
+        except Exception as e:
+            logger.error(f"render_asset_details: Failed to convert DataFrame to CSV: {str(e)}")
+            st.error("Failed to generate CSV report for download.")
+            # Still display the table if CSV fails
+
+        try:
+            logger.info("render_asset_details: Displaying DataFrame.")
+            st.dataframe(df, use_container_width=True)
+            logger.info("render_asset_details: DataFrame displayed successfully.")
+        except Exception as e:
+            logger.error(f"render_asset_details: Failed to display DataFrame: {str(e)}")
+            st.error("Failed to display the asset details table.")
 
     def render_individual_asset_view(self, assets):
         """Render detailed view for individual assets"""

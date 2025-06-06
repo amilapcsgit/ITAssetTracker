@@ -201,6 +201,10 @@ class DashboardComponents:
                         st.success(f"Status: {status.title()}")
                     else:
                         st.error(f"Status: {status.title()}")
+
+                nmap_error = network_info.get('nmap_error')
+                if nmap_error:
+                    st.error(f"**Nmap Scan Error:** {nmap_error}")
             
             with col2:
                 adapters = network_info.get('adapters', [])
