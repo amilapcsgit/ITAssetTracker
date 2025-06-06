@@ -1,0 +1,92 @@
+﻿IP Address:          192.168.120.189
+Hostname:            GEG-CENTRALINO
+PC Domain:           GEG-CENTRALINO
+AnyDesk ID:          947657345
+Windows account:     GEG-CENTRALINO\GEG-Centralino
+OS Version:          Microsoft Windows 10 Pro (10.0.19045 Build 19045)
+OS Install Date:     2024-05-14 20:35:45
+Last Reboot Time:    2025-05-05 08:58:16
+System Uptime:       2d 3h 0m
+User Email(s):       No Email Found
+CPU:                 Intel(R) Core(TM) i5-3330 CPU @ 3.00GHz (Socket: LGA1155)
+RAM:                 11,4 GB
+GPU:                 Intel(R) HD Graphics
+Monitor Model:       Philips 220E 
+
+System Manufacturer: ASUSTeK Computer INC.
+System Model:        BM6835_BM6635_BP6335
+Serial Number:       D4PFCG0007YJ
+BIOS Version:        0901
+Windows Language:    Italiano (Italia)
+
+Network Configuration:
+    Network Mode:    Static (0)
+    DNS Servers:     192.168.120.120, 192.168.120.131, 8.8.8.8, 8.8.4.4
+    Default Gateway: 192.168.120.223
+
+Stored Network Credentials:
+  cmdkey: Target=Domain:target=192.168.120.120, User=italtelo\frontofficert3
+  cmdkey: Target=Domain:target=TERMSRV/10.18.120.120, User=GRUPPOITALTELO\frontofficert3
+  cmdkey: Target=WindowsLive:target=virtualapp/didlogical, User=02tlflztvtsbnsmi
+
+Shared Folders:
+  None
+
+Office Version:
+  Microsoft Office Professional Plus 2019 - it-it (16.0.18623.20208)
+
+Office Activation:
+  No Activation Info Found
+
+OS Activation:
+  Licensed
+
+Windows key:
+  TY4CG-JDJH7-VJ2WF-DY4X9-HCFC6
+
+Antivirus:
+  Windows Defender
+
+Adobe/Autodesk:
+  Adobe Acrobat (64-bit) v23.001.20093; AutoCAD LT 2012 - Italiano v18.2.51.0; Autodesk CAD Manager Tools v16.0.0.65; Autodesk DWG TrueView 2014 v19.1.18.0; Autodesk Material Library 2012 v2.5.0.8; Autodesk Material Library Base Resolution Image Library 2012 v2.5.0.8
+
+Local User Accounts:
+  (No non-AD local users found)
+
+Installed Printers:
+  C7025 Luca PCL6; CD 5235_DC 6235; Citizen CL-S6621Z; Citizen CL-S6621Z (Copia 1); Citizen CL-S6621Z at //192.168.100.10/dlk-038180-U1(Copy 2); Citizen CL-S6621Z at //dlink-038180/dlk-038180-U1; Fax; GEG RT1 - XEROX C405; GEG RT1 - XEROX C405 PS; GEG RT2 - Damiano; GEG RT3 - XEROX C405; GEG_Uff_Legale_C8135; GEG-C8155-Defshell; GEG-uff-Tecnico-7835; Microsoft Print to PDF; Microsoft XPS Document Writer; OneNote (Desktop); OneNote for Windows 10; PDFCreator; VersaLink C7025 PCL6 uff.Manini
+
+Bitlocker Status:
+  F: Protection: Off, Encryption: FullyDecrypted
+  G: Protection: Off, Encryption: FullyDecrypted
+  C: Protection: Off, Encryption: FullyDecrypted
+
+=== SMB Credentials for Provided NAS IPs ===
+
+NasIP           UtenteMemorizzato       ConnessioneAttiva
+-----           -----------------       -----------------   192.168.120.120 sampledomain\username NO               
+
+
+=== Local Disks (Space & Type) ===
+  C: Total: 228333 MB, Free: 138008.14 MB, Type: SSD
+  D: Total: 100 MB, Free: 63.59 MB, Type: HDD
+  F: Total: 190776 MB, Free: 147274.39 MB, Type: HDD
+  G: Total: 268653 MB, Free: 261882.8 MB, Type: HDD
+
+=== systeminfo (selected fields) ===
+  Original Install Date: 14/05/2024, 20:35:45
+  System Model: BM6835_BM6635_BP6335
+  System Manufacturer: ASUSTeK Computer INC.
+  OS Version: 10.0.19045 N/D build 19045
+  Logon Server: \\GEG-CENTRALINO
+  System Locale: it;Italiano (Italia)
+  OS Configuration: Workstation autonoma
+  BIOS Version: ASUSTeK COMPUTER INC. (Licensed from AMI) 0901, 28/03/2013
+  Network Card(s): 1 NIC installate.,[01]: Intel(R) 82579V Gigabit Network Connection,      Nome connessione: Connessione alla rete locale (LAN),      DHCP abilitato:   S,      Server DHCP:      192.168.100.130,      Indirizzi IP,      [01]: 192.168.100.189
+  OS Name: Microsoft Windows 10 Pro
+  Product ID: 00330-80000-00000-AA749
+  Registered Organization: 
+
+=== Quick WinRM Access ===
+Enter-PSSession -ComputerName 192.168.120.12 -Credential GEG-CENTRALINO\ced
+

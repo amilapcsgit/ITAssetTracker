@@ -1,0 +1,6 @@
+﻿IP Address:          192.168.120.189
+Hostname:            GEG-sample1
+PC Domain:           GEG-CENTRALINO
+AnyDesk ID:          927657345
+Windows account:     GEG-CENTRALINO\GEG-Centralino
+OS Version:          Microsoft Windows 10 Pro (10.0.19045 Build 19045)
