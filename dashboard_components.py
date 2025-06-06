@@ -195,17 +195,47 @@ class DashboardComponents:
                 if network_info.get('mac_address'):
                     st.write("**MAC Address:**", network_info['mac_address'])
                 
-                if network_info.get('status'):
-                    status = network_info['status']
-                    if status == 'online':
-                        st.success(f"Status: {status.title()}")
-                    else:
-                        st.error(f"Status: {status.title()}")
+                if network_info.get('ip_address'):
+                    st.write("**IP Address:**", network_info['ip_address'])
 
+                if network_info.get('mac_address'):
+                    st.write("**MAC Address:**", network_info['mac_address'])
+
+                # Display Nmap Scan Status first, then fallback to general status
+                nmap_scan_status = network_info.get('nmap_scan_status')
+                general_status = network_info.get('status', 'unknown') # This is the nmap determined status or parser status
                 nmap_error = network_info.get('nmap_error')
-                if nmap_error:
-                    st.error(f"**Nmap Scan Error:** {nmap_error}")
-            
+
+                if nmap_scan_status == 'scanning':
+                    st.info("Nmap Status: Scanning... 🔬")
+                elif nmap_scan_status == 'pending':
+                    st.warning("Nmap Status: Scan pending... 🕒") # Using warning for pending
+                elif nmap_scan_status == 'failed':
+                    st.error(f"Nmap Status: Scan failed ❌")
+                    if nmap_error:
+                        st.caption(f"Error details: {nmap_error}")
+                elif nmap_scan_status == 'completed' or nmap_scan_status == 'disabled' or not nmap_scan_status:
+                    # If completed, disabled, or status field doesn't exist (e.g. old data), show general status
+                    if general_status == 'online':
+                        st.success(f"Status: {general_status.title()}")
+                    elif general_status in ['offline', 'error', 'unknown']: # Treat 'error' from nmap also as offline indication here
+                        st.error(f"Status: {general_status.title()}")
+                    else: # Should ideally not happen with current status values
+                        st.write(f"Status: {general_status.title()}")
+                else: # Other potential nmap_scan_status values if any are added later
+                     st.write(f"Nmap Status: {nmap_scan_status.title()}")
+
+                # Display Nmap error separately only if it's not already shown by 'failed' status,
+                # and if the scan wasn't disabled (no error expected then).
+                if nmap_error and nmap_scan_status not in ['failed', 'disabled']:
+                    st.expander("Nmap Scan Details (Error/Output)", expanded=False).text(nmap_error)
+
+                # Optionally, show raw nmap output if available and no major error
+                nmap_raw_output = network_info.get('nmap_scan_output')
+                if nmap_raw_output and not nmap_error :
+                    with st.expander("Show Nmap Output", expanded=False):
+                        st.text(nmap_raw_output)
+
             with col2:
                 adapters = network_info.get('adapters', [])
                 if adapters:

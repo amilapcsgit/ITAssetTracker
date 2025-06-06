@@ -185,12 +185,18 @@ class ITAssetDashboard:
         if 'show_low_storage_only' not in st.session_state:
             st.session_state.show_low_storage_only = False
         if 'nmap_enabled' not in st.session_state:
-            st.session_state.nmap_enabled = False
+            st.session_state.nmap_enabled = False # Effectively controlled by nmap_scan_type now
         if 'nmap_path' not in st.session_state:
             st.session_state.nmap_path = "nmap"
+        if 'nmap_scan_type' not in st.session_state:
+            st.session_state.nmap_scan_type = "Disabled"
+        if 'nmap_scan_queue' not in st.session_state:
+            st.session_state.nmap_scan_queue = []
+        if 'nmap_currently_scanning' not in st.session_state:
+            st.session_state.nmap_currently_scanning = None # Stores asset name being scanned
 
-    def _run_nmap_scan(self, ip_address: str, nmap_executable_path: str = "nmap") -> dict:
-        """Run nmap scan on a given IP address and parse results."""
+    def _run_nmap_scan(self, ip_address: str, nmap_executable_path: str = "nmap", scan_type: str = "Full Scan") -> dict:
+        """Run nmap scan on a given IP address and parse results based on scan type."""
         result = {
             "status": "unknown",
             "mac_address": None,
@@ -203,8 +209,23 @@ class ITAssetDashboard:
             # -T4: Aggressive timing
             # -A: Enable OS detection, version detection, script scanning, and traceroute
             # -v: Verbose
+            # -sn: Ping Scan - disable port scan. Used for Quick Scan.
+
+            command = []
+            if scan_type == "Quick Scan":
+                command = [nmap_executable_path, "-sn", "-T4", ip_address]
+                logger.info(f"Executing Nmap Quick Scan for {ip_address}: {' '.join(command)}")
+            elif scan_type == "Full Scan":
+                command = [nmap_executable_path, "-T4", "-A", "-v", "-Pn", ip_address]
+                logger.info(f"Executing Nmap Full Scan for {ip_address}: {' '.join(command)}")
+            else:
+                result["status"] = "error"
+                result["error_message"] = f"Invalid scan type: {scan_type}"
+                logger.error(f"Invalid nmap scan type '{scan_type}' for IP {ip_address}")
+                return result
+
             process = subprocess.run(
-                [nmap_executable_path, "-T4", "-A", "-v", "-Pn", ip_address],
+                command,
                 capture_output=True,
                 text=True,
                 timeout=120  # 120 seconds timeout
@@ -212,34 +233,37 @@ class ITAssetDashboard:
             result["nmap_output"] = process.stdout
 
             if process.returncode == 0:
-                logger.info(f"Nmap scan for {ip_address} successful.")
-                # Check for host status
+                logger.info(f"Nmap {scan_type} for {ip_address} command executed successfully (returncode 0). Output:\n{process.stdout[:500]}...") # Log part of output
+
                 if "Host seems down" in process.stdout:
                     result["status"] = "offline"
-                    logger.info(f"Nmap scan for {ip_address}: Host seems down.")
-                elif "Host is up" in process.stdout:
+                elif "Host is up" in process.stdout: # This is the primary indicator for both scan types
                     result["status"] = "online"
-                    logger.info(f"Nmap scan for {ip_address}: Host is up.")
-                else:
-                    # Check if any ports are open as an indication of being online
-                    if re.search(r"\d+/open/", process.stdout):
-                        result["status"] = "online"
-                        logger.info(f"Nmap scan for {ip_address}: Host is up (open ports found).")
+                # For Full Scan, open ports can also indicate 'online' if -Pn was used and Host is up/down is ambiguous
+                elif scan_type == "Full Scan" and re.search(r"\d+/open/", process.stdout):
+                    result["status"] = "online"
+                else: # Default to offline if no clear "up" signal, or if quick scan output is minimal
+                    result["status"] = "offline"
+
+                logger.info(f"Nmap {scan_type} for {ip_address}: Parsed status: {result['status']}.")
+
+                if scan_type == "Full Scan":
+                    mac_match = re.search(r"MAC Address: ([0-9A-Fa-f:]{17})", process.stdout, re.IGNORECASE)
+                    if mac_match:
+                        result["mac_address"] = mac_match.group(1).upper()
+                        logger.info(f"Nmap Full Scan for {ip_address}: MAC Address found: {result['mac_address']}")
                     else:
-                        result["status"] = "offline" # Default to offline if no clear "up" signal
-                        logger.info(f"Nmap scan for {ip_address}: Host status unclear, assuming offline.")
-
-
-                # Parse MAC address
-                mac_match = re.search(r"MAC Address: ([0-9A-Fa-f:]{17})", process.stdout)
-                if mac_match:
-                    result["mac_address"] = mac_match.group(1)
-                    logger.info(f"Nmap scan for {ip_address}: MAC Address found: {result['mac_address']}")
-                else:
-                    logger.info(f"Nmap scan for {ip_address}: MAC Address not found in output.")
+                        # Attempt to find MAC in other formats for some OSes (e.g., Linux `nmap localhost`)
+                        mac_alt_match = re.search(r"Station MAC: ([0-9A-Fa-f:]{17})", process.stdout, re.IGNORECASE) # Common in -A for local machine
+                        if mac_alt_match:
+                            result["mac_address"] = mac_alt_match.group(1).upper()
+                            logger.info(f"Nmap Full Scan for {ip_address}: Alternate MAC Address found: {result['mac_address']}")
+                        else:
+                            logger.info(f"Nmap Full Scan for {ip_address}: MAC Address not found in output.")
+                # For Quick Scan, result["mac_address"] remains None
             else:
                 result["status"] = "error"
-                result["error_message"] = f"Nmap scan failed with return code {process.returncode}. Error: {process.stderr}"
+                result["error_message"] = f"Nmap {scan_type} for {ip_address} failed with return code {process.returncode}. Error: {process.stderr}"
                 logger.error(f"Nmap scan for {ip_address} failed. STDERR: {process.stderr}")
 
         except FileNotFoundError:
@@ -276,32 +300,37 @@ class ITAssetDashboard:
                 try:
                     asset_data = self.asset_parser.parse_asset_file(file_path)
                     if asset_data:
-                        # Nmap integration
+                        # Initialize network_info if not present
+                        if 'network_info' not in asset_data:
+                            asset_data['network_info'] = {}
+
+                        # Set initial nmap_scan_status and default status from parser
+                        asset_data['network_info']['nmap_scan_status'] = 'pending' # Default for potential scan
+                        if 'status' not in asset_data['network_info']: # if parser didn't set one
+                             asset_data['network_info']['status'] = 'unknown'
+
+
+                        asset_name = asset_data.get('computer_name', file_path.stem)
                         ip_address = asset_data.get('network_info', {}).get('ip_address')
+                        current_scan_type = st.session_state.nmap_scan_type
 
-                        if st.session_state.nmap_enabled and ip_address and ip_address != 'N/A':
-                            logger.info(f"Attempting nmap scan for asset {asset_data.get('computer_name', file_path.stem)} at IP {ip_address} using nmap path: {st.session_state.nmap_path}")
-                            nmap_result = self._run_nmap_scan(ip_address, nmap_executable_path=st.session_state.nmap_path)
-
-                            # Ensure network_info dictionary exists
-                            if 'network_info' not in asset_data:
-                                asset_data['network_info'] = {}
-
-                            # Merge nmap results, potentially overwriting parser results for status and MAC
-                            asset_data['network_info']['status'] = nmap_result.get('status', asset_data['network_info'].get('status', 'unknown'))
-                            if nmap_result.get('mac_address'): # Prioritize nmap MAC address
-                                asset_data['network_info']['mac_address'] = nmap_result.get('mac_address')
-                            asset_data['network_info']['nmap_scan_output'] = nmap_result.get('nmap_output')
-                            asset_data['network_info']['nmap_error'] = nmap_result.get('error_message')
-
-                            if nmap_result.get('error_message'):
-                                logger.warning(f"Nmap scan for {ip_address} (Asset: {asset_data.get('computer_name', file_path.stem)}) encountered an error: {nmap_result.get('error_message')}")
+                        if current_scan_type != "Disabled" and ip_address and ip_address != 'N/A':
+                            # Add to queue if not already processed or queued
+                            # Note: A more robust check for "already processed" might involve looking at nmap_scan_status
+                            if asset_name not in st.session_state.nmap_scan_queue and \
+                               asset_name != st.session_state.nmap_currently_scanning and \
+                               asset_data['network_info'].get('nmap_scan_status') != 'completed' and \
+                               asset_data['network_info'].get('nmap_scan_status') != 'failed': # Avoid re-queueing completed/failed
+                                st.session_state.nmap_scan_queue.append(asset_name)
+                                logger.info(f"Asset {asset_name} added to Nmap scan queue.")
                             else:
-                                logger.info(f"Nmap scan for {ip_address} (Asset: {asset_data.get('computer_name', file_path.stem)}) completed. Status: {nmap_result.get('status')}")
-                        elif not ip_address or ip_address == 'N/A':
-                            logger.info(f"Skipping nmap scan for asset {asset_data.get('computer_name', file_path.stem)} due to missing IP address.")
+                                # If already processed (e.g. from a previous partial scan run), ensure status is not 'pending'
+                                if asset_data['network_info'].get('nmap_scan_status') == 'pending':
+                                     asset_data['network_info']['nmap_scan_status'] = 'unknown' # reset if it was pending but not queued
+                        else:
+                            asset_data['network_info']['nmap_scan_status'] = 'disabled' # Explicitly mark as disabled or no IP
 
-                        assets_data[asset_data.get('computer_name', file_path.stem)] = asset_data
+                        assets_data[asset_name] = asset_data
                         logger.info(f"Successfully processed {file_path.name} (including nmap if applicable).")
                     else:
                         logger.warning(f"No data extracted from {file_path.name}")
@@ -519,18 +548,31 @@ class ITAssetDashboard:
         )
 
         # Nmap Settings
-        st.sidebar.subheader("Network Scanning (Nmap)")
-        nmap_enabled_ui = st.sidebar.checkbox(
-            "Enable Nmap Scans",
-            value=st.session_state.nmap_enabled,
-            help="Scan assets with nmap for live status and MAC address. Can significantly increase data loading times."
+        st.sidebar.subheader("Network Scanning") # Simplified header
+
+        scan_type_options = ["Disabled", "Quick Scan", "Full Scan"]
+        # Ensure st.session_state.nmap_scan_type is valid, otherwise default to "Disabled"
+        try:
+            current_scan_type_index = scan_type_options.index(st.session_state.nmap_scan_type)
+        except ValueError:
+            st.session_state.nmap_scan_type = "Disabled"
+            current_scan_type_index = 0 # Default to "Disabled"
+
+        nmap_scan_type_ui = st.sidebar.selectbox(
+            "Nmap Scan Type",
+            options=scan_type_options,
+            index=current_scan_type_index,
+            key="nmap_scan_type_selector", # Added key for robustness
+            help="Select Nmap scan intensity. 'Disabled' turns off scanning. 'Quick Scan' only checks online status (-sn). 'Full Scan' provides more details (-A -v -Pn)."
         )
-        if nmap_enabled_ui != st.session_state.nmap_enabled:
-            st.session_state.nmap_enabled = nmap_enabled_ui
-            # No rerun needed, will be picked up on next data load or refresh
+        if nmap_scan_type_ui != st.session_state.nmap_scan_type:
+            st.session_state.nmap_scan_type = nmap_scan_type_ui
+            # Update the old nmap_enabled for any part of code that might still (erroneously) use it
+            st.session_state.nmap_enabled = (nmap_scan_type_ui != "Disabled")
+            # st.rerun() # Could be useful if other parts of UI depend on this immediately
 
         nmap_path_ui = st.sidebar.text_input(
-            "Nmap Path",
+            "Nmap Executable Path",  # More descriptive label
             value=st.session_state.nmap_path,
             help="Path to nmap executable (e.g., '/usr/bin/nmap' or 'C:\\Program Files (x86)\\Nmap\\nmap.exe'). Default is 'nmap' (assumes it's in system PATH)."
         )
@@ -548,8 +590,9 @@ class ITAssetDashboard:
             'show_low_storage': show_low_storage,
             'anydesk_search': anydesk_search,
             'search_term': search_term,
-            'nmap_enabled': st.session_state.nmap_enabled, # Pass current state
-            'nmap_path': st.session_state.nmap_path         # Pass current state
+            # 'nmap_enabled' is now implicitly handled by nmap_scan_type
+            'nmap_scan_type': st.session_state.nmap_scan_type,
+            'nmap_path': st.session_state.nmap_path
         }
 
     def filter_assets(self, filters):
@@ -638,7 +681,10 @@ class ITAssetDashboard:
         # If "ID" is an explicitly bad value, treat it as if no ID was found.
         if anydesk_id == "ID":
             anydesk_id = ""
-        status = asset.get('network_info', {}).get('status', 'unknown')
+
+        network_info = asset.get('network_info', {})
+        status = network_info.get('status', 'unknown')
+        nmap_scan_status = network_info.get('nmap_scan_status', 'unknown')
         
         # Extract C Drive free space
         c_drive_free_gb = self.get_c_drive_free_space(asset)
@@ -649,9 +695,23 @@ class ITAssetDashboard:
         anydesk_html = ""
         if anydesk_id:
             anydesk_html = f'<a href="anydesk:{anydesk_id}" class="anydesk-link" target="_blank">AnyDesk: {anydesk_id}</a>'
-        
-        status_class = "status-online" if status == "online" else "status-offline"
-        status_text = "● Online" if status == "online" else "● Offline"
+
+        # Determine status display based on nmap_scan_status and actual status
+        if nmap_scan_status == 'scanning':
+            status_text = "🔬 Scanning..."
+            status_class = "status-scanning" # Needs CSS
+        elif nmap_scan_status == 'pending':
+            status_text = "🕒 Scan pending"
+            status_class = "status-pending" # Needs CSS
+        elif nmap_scan_status == 'failed':
+            status_text = "❌ Scan failed"
+            status_class = "status-offline" # Or a specific 'status-failed' class
+        elif status == 'online':
+            status_text = "● Online"
+            status_class = "status-online"
+        else: # Covers 'offline', 'unknown', 'error' from nmap, or initial 'unknown'
+            status_text = "● Offline"
+            status_class = "status-offline"
         
         storage_class = "low-storage" if low_storage else ""
         bubble_class = f"asset-bubble {storage_class}"
@@ -871,21 +931,28 @@ class ITAssetDashboard:
             st.error("Failed to create the data table for asset details.")
             return
         
-        try:
-            logger.info("render_asset_details: Converting DataFrame to CSV.")
-            csv = df.to_csv(index=False)
-            logger.info("render_asset_details: CSV conversion successful.")
+        if not df.empty:
+            try:
+                logger.info("render_asset_details: Converting DataFrame to CSV.")
+                csv = df.to_csv(index=False)
+                logger.info("render_asset_details: CSV conversion successful.")
 
-            st.download_button(
-                label="📥 Download Asset Report (CSV)",
-                data=csv,
-                file_name=f"asset_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
-                mime="text/csv"
-            )
-        except Exception as e:
-            logger.error(f"render_asset_details: Failed to convert DataFrame to CSV: {str(e)}")
-            st.error("Failed to generate CSV report for download.")
-            # Still display the table if CSV fails
+                logger.info("render_asset_details: Preparing download button.")
+                st.download_button(
+                    label="📥 Download Asset Report (CSV)",
+                    data=csv,
+                    file_name=f"asset_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                    mime="text/csv",
+                    key="download_asset_report_csv" # Added a key for robustness
+                )
+                logger.info("render_asset_details: Download button prepared.")
+            except Exception as e:
+                logger.error(f"render_asset_details: Failed to convert DataFrame to CSV or prepare download button: {str(e)}")
+                st.error("Failed to generate CSV report for download.")
+                # Still display the table if CSV fails
+        else:
+            logger.info("render_asset_details: DataFrame is empty, skipping CSV conversion and download button.")
+            st.info("No data available in the table to download as CSV.") # Inform user
 
         try:
             logger.info("render_asset_details: Displaying DataFrame.")
@@ -932,10 +999,20 @@ class ITAssetDashboard:
             # Apply Windows 11 theme
             apply_windows11_theme()
             
-            # Load data if not already loaded
-            if not st.session_state.assets_data:
+            # Load data if not already loaded or if refresh is triggered
+            if not st.session_state.assets_data or 'refresh_trigger' in st.session_state:
+                if 'refresh_trigger' in st.session_state:
+                    del st.session_state['refresh_trigger'] # consume trigger
+
+                # Reset scan queue and current scan only if it's a full data reload
+                # This might need adjustment if we want scans to persist across soft refreshes
+                # For now, refresh implies restart of queue logic
+                st.session_state.nmap_scan_queue = []
+                st.session_state.nmap_currently_scanning = None
+                logger.info("Nmap scan queue reset due to data refresh.")
+
                 with st.spinner("Loading asset data..."):
-                    st.session_state.assets_data = self.load_assets_data()
+                    st.session_state.assets_data = self.load_assets_data() # This will populate the queue
 
             # Render header
             self.render_header()
@@ -951,42 +1028,115 @@ class ITAssetDashboard:
 
             # Render main content
             if filtered_assets:
-                # Asset bubbles (main view)
                 self.render_asset_bubbles(filtered_assets)
-                
                 st.divider()
-                
-                # Overview metrics
                 self.render_overview_metrics(filtered_assets)
-                
                 st.divider()
-                
-                # System Statistics (pie charts)
                 self.render_system_statistics(filtered_assets)
-                
                 st.divider()
-                
-                # Asset details table
                 self.render_asset_details(filtered_assets)
             else:
-                if st.session_state.assets_data:
+                if st.session_state.assets_data: # Check if assets were loaded but all filtered out
                     st.warning("No assets match the current filter criteria. Please adjust your filters.")
                 else:
                     st.info("""
                     **Welcome to the IT Asset Management Dashboard!**
                     
                     To get started:
-                    1. Place your Windows PC data files (.txt format) in the 'assets' folder
-                    2. Click the 'Refresh Data' button to load the asset information
-                    3. Use the sidebar filters to explore your IT assets
+                    1. Place your Windows PC data files (.txt format) in the 'assets' folder.
+                    2. Click the 'Refresh Data' button to load the asset information.
+                    3. Use the sidebar filters to explore your IT assets.
                     
                     The system expects .txt files generated by the infopcv3.py script.
                     """)
 
+            # Process one Nmap scan from the queue after rendering UI
+            self._process_nmap_scan_queue()
+
         except Exception as e:
             logger.error(f"Application error: {str(e)}")
-            st.error(f"Application error: {str(e)}")
-    
+            st.error(f"An unhandled error occurred: {str(e)}") # Show generic error to user
+            # Potentially log full traceback for debugging
+            import traceback
+            logger.error(traceback.format_exc())
+
+    def _process_nmap_scan_queue(self):
+        """Process one asset from the Nmap scan queue."""
+        if st.session_state.nmap_scan_type == "Disabled":
+            if st.session_state.nmap_scan_queue: # Clear queue if scans got disabled
+                st.session_state.nmap_scan_queue = []
+                logger.info("Nmap scans disabled, queue cleared.")
+            st.session_state.nmap_currently_scanning = None
+            return
+
+        if not st.session_state.nmap_scan_queue:
+            if st.session_state.nmap_currently_scanning is None : # Only log if not already finished all
+                 logger.info("Nmap scan queue is empty. All scheduled scans completed or no assets to scan.")
+            st.session_state.nmap_currently_scanning = None # Ensure it's reset
+            return
+
+        if st.session_state.nmap_currently_scanning is not None:
+            logger.info(f"Nmap scan for {st.session_state.nmap_currently_scanning} is already in progress (or waiting for rerun). Skipping new scan initiation.")
+            return
+
+        asset_name_to_scan = st.session_state.nmap_scan_queue.pop(0)
+        st.session_state.nmap_currently_scanning = asset_name_to_scan
+
+        asset_to_scan = st.session_state.assets_data.get(asset_name_to_scan)
+
+        if not asset_to_scan:
+            logger.warning(f"Asset {asset_name_to_scan} not found in assets_data for Nmap scan. Removing from queue.")
+            st.session_state.nmap_currently_scanning = None
+            if st.session_state.nmap_scan_queue : # If queue still has items trigger next one
+                st.rerun()
+            return
+
+        ip_address = asset_to_scan.get('network_info', {}).get('ip_address')
+        if not ip_address or ip_address == 'N/A':
+            logger.warning(f"Skipping Nmap scan for {asset_name_to_scan}: No valid IP address.")
+            asset_to_scan['network_info']['nmap_scan_status'] = 'failed'
+            asset_to_scan['network_info']['nmap_error'] = 'Missing IP Address for scan'
+            st.session_state.nmap_currently_scanning = None
+            st.rerun() # Rerun to update UI and process next
+            return
+
+        logger.info(f"Starting Nmap {st.session_state.nmap_scan_type} for asset: {asset_name_to_scan} ({ip_address})")
+        asset_to_scan['network_info']['nmap_scan_status'] = 'scanning'
+
+        # Trigger a rerun to update UI to "scanning..." before scan starts
+        # This makes the UI more responsive. The actual scan happens after this rerun.
+        # However, for the tool environment, direct call might be better.
+        # For now, let's call it directly and then rerun.
+        # st.experimental_rerun() # This would be for real Streamlit app
+
+        nmap_result = self._run_nmap_scan(
+            ip_address,
+            nmap_executable_path=st.session_state.nmap_path,
+            scan_type=st.session_state.nmap_scan_type
+        )
+
+        # Update asset data in session state
+        target_asset = st.session_state.assets_data[asset_name_to_scan]
+        if nmap_result.get('status') and nmap_result.get('status') not in ['unknown', 'error']:
+            target_asset['network_info']['status'] = nmap_result.get('status')
+
+        if st.session_state.nmap_scan_type == "Full Scan" and nmap_result.get('mac_address'):
+            target_asset['network_info']['mac_address'] = nmap_result.get('mac_address')
+
+        target_asset['network_info']['nmap_scan_output'] = nmap_result.get('nmap_output')
+        target_asset['network_info']['nmap_error'] = nmap_result.get('error_message')
+
+        if nmap_result.get('error_message') or nmap_result.get('status') == 'error':
+            target_asset['network_info']['nmap_scan_status'] = 'failed'
+            logger.error(f"Nmap scan failed for {asset_name_to_scan}: {nmap_result.get('error_message')}")
+        else:
+            target_asset['network_info']['nmap_scan_status'] = 'completed'
+            logger.info(f"Nmap scan completed for {asset_name_to_scan}. Status: {target_asset['network_info']['status']}")
+
+        st.session_state.nmap_currently_scanning = None
+        st.rerun() # Rerun to update UI and process next in queue
+
+
     def render_system_statistics(self, assets):
         """Render system statistics with pie charts"""
         st.subheader("System Statistics")
