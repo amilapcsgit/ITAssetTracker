@@ -257,6 +257,15 @@ def apply_windows11_theme():
         font-size: 12px;
     }}
 
+    .asset-account, .asset-user-email {{
+        font-size: 11px;
+        opacity: 0.8;
+        margin-bottom: 4px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }}
+
     .summary-charts-container {{
         padding: 10px;
         /* background-color: #f8f9fa; /* Optional: slight background for the charts area */
@@ -313,10 +322,15 @@ class ITAssetDashboard:
             st.session_state.anydesk_search_filter = ""
         if 'search_term_filter' not in st.session_state:
             st.session_state.search_term_filter = ""
-        # For selected_assets, we won't make pills dismissible for now, so direct session state might not be needed for dismissal logic
-        # but it's good practice for widget binding if we were to expand.
-        if 'selected_assets_filter' not in st.session_state:
-             st.session_state.selected_assets_filter = []
+        # selected_assets_filter is removed
+
+        # UI Customization Settings
+        if 'show_summary_section' not in st.session_state:
+            st.session_state.show_summary_section = True
+        if 'show_bubbles_section' not in st.session_state:
+            st.session_state.show_bubbles_section = True
+        if 'show_details_table_section' not in st.session_state:
+            st.session_state.show_details_table_section = True
 
 
     def _run_nmap_scan(self, ip_address: str, nmap_executable_path: str = "nmap", scan_type: str = "Full Scan") -> dict:
@@ -576,21 +590,7 @@ class ITAssetDashboard:
             st.sidebar.info("No asset data available. Please ensure asset files are in the 'assets' folder.")
             return {}
 
-        # Asset selection
-        asset_names = list(st.session_state.assets_data.keys())
-        # If selected_assets_filter is empty (first run), default to all assets. Otherwise, use current selection.
-        if not st.session_state.selected_assets_filter and asset_names:
-            st.session_state.selected_assets_filter = asset_names.copy()
-
-        selected_assets = st.sidebar.multiselect(
-            "Select Assets",
-            options=asset_names,
-            default=st.session_state.selected_assets_filter,
-            key="selected_assets_multiselect", # Key to help Streamlit manage its state
-            on_change=lambda: setattr(st.session_state, 'selected_assets_filter', st.session_state.selected_assets_multiselect),
-            help="Select specific assets to display"
-        )
-        st.session_state.selected_assets_filter = selected_assets # Ensure it's always up-to-date
+        # Asset selection (Removed)
 
         # OS filter with normalized versions
         all_os_versions_set = set()
@@ -748,7 +748,7 @@ class ITAssetDashboard:
             st.session_state.nmap_path = nmap_path_ui
 
         return {
-            'selected_assets': selected_assets,
+            # 'selected_assets': selected_assets, # Removed
             'selected_os': selected_os,
             'selected_manufacturers': selected_manufacturers,
             'min_ram': min_ram,
@@ -763,14 +763,31 @@ class ITAssetDashboard:
             'nmap_path': st.session_state.nmap_path # Same as above
         }
 
+        # --- View Customization Expander ---
+        with st.sidebar.expander("⚙️ View Customization", expanded=False):
+            st.session_state.show_summary_section = st.checkbox(
+                "Show Summary & Charts",
+                value=st.session_state.get('show_summary_section', True)
+                # key="show_summary_cb" # Key not strictly needed if direct assignment to session_state
+            )
+            st.session_state.show_bubbles_section = st.checkbox(
+                "Show Asset Bubbles",
+                value=st.session_state.get('show_bubbles_section', True)
+                # key="show_bubbles_cb"
+            )
+            st.session_state.show_details_table_section = st.checkbox(
+                "Show Asset Details Table",
+                value=st.session_state.get('show_details_table_section', True)
+                # key="show_details_table_cb"
+            )
+        return filters # Return original filters dictionary, session state handles customization
+
     def filter_assets(self, filters):
         """Apply filters to the assets data"""
         filtered_assets = {}
         
         for name, asset in st.session_state.assets_data.items():
-            # Asset name filter
-            if filters['selected_assets'] and name not in filters['selected_assets']:
-                continue
+            # Asset name filter (Removed)
             
             # OS filter with normalized comparison
             if filters['selected_os']:
@@ -890,6 +907,36 @@ class ITAssetDashboard:
         
         name_url_encoded = urllib.parse.quote(name)
 
+
+        # Extract Windows User Account from raw_content
+        windows_account_html = ""
+        raw_content = asset.get('raw_content', '')
+        if raw_content:
+            # Try a few regex patterns to find the user account
+            patterns = [
+                r"Windows account:\s*(?:[^\\]+\\)?([^\r\n]+)", # Domain\User or just User
+                r"User Account:\s*([^\r\n]+)",
+                r"Current User:\s*([^\r\n]+)"
+            ]
+            username_found = None
+            for pattern in patterns:
+                match = re.search(pattern, raw_content, re.IGNORECASE)
+                if match:
+                    username_found = match.group(1).strip()
+                    if username_found and username_found != "N/A": # Ensure it's not 'N/A'
+                        break
+            if username_found and username_found != "N/A": # Double check after loop
+                 windows_account_html = f'<div class="asset-account">👤 {username_found}</div>'
+            elif "Windows account: N/A" not in raw_content and "User Account: N/A" not in raw_content: # Avoid showing empty if explicitly N/A
+                logger.debug(f"Windows account not found or explicitly N/A for asset {name}.")
+
+
+        # Extract User Email
+        user_email_html = ""
+        user_email = asset.get('user_email')
+        if user_email and user_email.strip() and user_email.lower() != 'n/a':
+            user_email_html = f'<div class="asset-user-email">📧 {user_email}</div>'
+
         bubble_html = f"""
         <div class="{final_bubble_class}">
             <div class="asset-bubble-content">
@@ -898,9 +945,11 @@ class ITAssetDashboard:
                     <div class="asset-ip">{ip_address}</div>
                 </div>
                 <div class="asset-details-group">
-                    <div>🖥️ OS: {os_version}</div>
-                    <div>💾 RAM: {memory_display}</div>
-                    <div>💽 Storage (C:): {c_drive_display}</div>
+                    <div class="asset-os">🖥️ OS: {os_version}</div>
+                    <div class="asset-ram">💾 RAM: {memory_display}</div>
+                    <div class="asset-storage">💽 Storage (C:): {c_drive_display}</div>
+                    {windows_account_html}
+                    {user_email_html}
                 </div>
                 <div class="asset-footer-group">
                     <span class="{status_text_class}">{plain_status_text}</span>
@@ -1243,7 +1292,7 @@ class ITAssetDashboard:
             # Display active filters as dismissible pills
             if st.session_state.assets_data and filters:
                 # Calculate default values for comparison
-                all_asset_names_list = list(st.session_state.assets_data.keys())
+                # all_asset_names_list = list(st.session_state.assets_data.keys()) # No longer needed for pills
                 all_os_versions_set = set()
                 all_manufacturers_set = set()
                 all_ram_values_list = []
@@ -1267,6 +1316,8 @@ class ITAssetDashboard:
                 default_max_storage = max(all_storage_values_list) if all_storage_values_list else 500.0
 
                 active_pills_data = [] # Store tuples of (pill_text, dismiss_key, dismiss_action_args)
+
+                # "Selected Assets" pill logic removed.
 
                 # OS Filters (Individual pills for each selected OS if not all are selected)
                 if len(st.session_state.selected_os_filter) != len(all_os_versions_set):
@@ -1340,7 +1391,7 @@ class ITAssetDashboard:
 
             # Apply filters using the session state values that back the widgets
             current_filters_for_logic = {
-                'selected_assets': st.session_state.selected_assets_filter,
+                # 'selected_assets': st.session_state.selected_assets_filter, # Removed
                 'selected_os': st.session_state.selected_os_filter,
                 'selected_manufacturers': st.session_state.selected_manufacturers_filter,
                 'min_ram': st.session_state.ram_range_filter[0] if st.session_state.ram_range_filter else default_min_ram,
@@ -1356,26 +1407,28 @@ class ITAssetDashboard:
             # Render asset details modal if open
             self.render_asset_details_modal(filtered_assets) # Modal can be rendered early
 
-            # --- Summary Metrics and Charts Section ---
-            st.markdown('<div class="summary-charts-container">', unsafe_allow_html=True)
-            self.render_overview_metrics(filtered_assets) # Metrics first
-            st.divider()
+            # --- Summary Metrics and Charts Section (Conditional) ---
+            if st.session_state.get('show_summary_section', True):
+                st.markdown('<div class="summary-charts-container">', unsafe_allow_html=True)
+                self.render_overview_metrics(filtered_assets) # Metrics first
+                st.divider()
+                self.render_system_statistics(filtered_assets)
+                self.render_status_distribution_chart(filtered_assets)
+                st.markdown('</div>', unsafe_allow_html=True)
+                st.divider()
 
-            # Group charts together
-            # Potentially use st.columns here if more than 2 charts are desired side-by-side for system_statistics
-            self.render_system_statistics(filtered_assets)
-            # Add the new status chart; it will render below system_statistics or in a new row if system_statistics uses columns fully
-            self.render_status_distribution_chart(filtered_assets)
-
-            st.markdown('</div>', unsafe_allow_html=True)
-            st.divider() # Divider after charts section, before asset bubbles
-
-            # Render main content - Asset Bubbles and Details Table
+            # Render main content - Asset Bubbles and Details Table (Conditional)
             if filtered_assets:
-                self.render_asset_bubbles(filtered_assets)
-                st.divider() # Divider between bubbles and detailed table
-                self.render_asset_details(filtered_assets)
+                if st.session_state.get('show_bubbles_section', True):
+                    self.render_asset_bubbles(filtered_assets)
+                    # Show divider only if both bubbles and table are shown, or if bubbles are hidden and table is shown
+                    if st.session_state.get('show_details_table_section', True):
+                         st.divider()
+
+                if st.session_state.get('show_details_table_section', True):
+                    self.render_asset_details(filtered_assets)
             else:
+                # This part remains, showing welcome/no assets message
                 if st.session_state.assets_data: # Check if assets were loaded but all filtered out
                     st.warning("No assets match the current filter criteria. Please adjust your filters.")
                 else:
