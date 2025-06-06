@@ -13,81 +13,42 @@ class AssetParser:
     def __init__(self):
         self.patterns = {
             'computer_name': [
-                r'Computer Name[:\s]+([^\n\r]+)',
-                r'System Name[:\s]+([^\n\r]+)',
-                r'Hostname[:\s]+([^\n\r]+)'
+                r'Computer Name[:\\s]+([^\\n\\r]+)',
+                r'System Name[:\\s]+([^\\n\\r]+)',
+                r'Hostname[:\\s]+([^\\n\\r]+)'
             ],
             'ip_address': [
-                r'IP Address[:\s]+(\d+\.\d+\.\d+\.\d+)',
-                r'IPv4 Address[:\s]+(\d+\.\d+\.\d+\.\d+)',
-                r'Network Address[:\s]+(\d+\.\d+\.\d+\.\d+)'
+                r'IP Address[:\\s]+(\\d+\\.\\d+\\.\\d+\\.\\d+)',
+                r'IPv4 Address[:\\s]+(\\d+\\.\\d+\\.\\d+\\.\\d+)',
+                r'Network Address[:\\s]+(\\d+\\.\\d+\\.\\d+\\.\\d+)'
             ],
             'os_version': [
-                r'Operating System[:\s]+([^\n\r]+)',
-                r'OS Version[:\s]+([^\n\r]+)',
-                r'Windows Version[:\s]+([^\n\r]+)'
+                r'OS Version[:\\s]+([^\\n\\r]+)',         # <-- CORRECTED ORDER: Most specific pattern first
+                r'Operating System[:\\s]+([^\\n\\r]+)',
+                r'Windows Version[:\\s]+([^\\n\\r]+)'
             ],
             'manufacturer': [
-                r'Manufacturer[:\s]+([^\n\r]+)',
-                r'System Manufacturer[:\s]+([^\n\r]+)',
-                r'Computer Manufacturer[:\s]+([^\n\r]+)'
+                r'Manufacturer[:\\s]+([^\\n\\r]+)',
+                r'System Manufacturer[:\\s]+([^\\n\\r]+)',
+                r'Computer Manufacturer[:\\s]+([^\\n\\r]+)'
             ],
             'model': [
-                r'Model[:\s]+([^\n\r]+)',
-                r'System Model[:\s]+([^\n\r]+)',
-                r'Computer Model[:\s]+([^\n\r]+)'
+                r'Model[:\\s]+([^\\n\\r]+)',
+                r'System Model[:\\s]+([^\\n\\r]+)',
+                r'Computer Model[:\\s]+([^\\n\\r]+)'
             ],
-            'processor': [
-                r'Processor[:\s]+([^\n\r]+)',
-                r'CPU[:\s]+([^\n\r]+)',
-                r'Central Processor[:\s]+([^\n\r]+)'
-            ],
-            'memory': [
-                r'Total Physical Memory[:\s]+([^\n\r]+)',
-                r'RAM[:\s]+([^\n\r]+)',
-                r'Memory[:\s]+([^\n\r]+)'
-            ],
-            'anydesk_id': [
-                r'AnyDesk ID[:\s]+(\d+)',
-                r'AnyDesk[:\s]+(\d+)',
-                r'Remote ID[:\s]+(\d+)'
-            ],
-            'user_email': [
-                r'User Email\(s\)[:\s]+([^\n\r]+)',
-                r'Email[:\s]+([^\n\r]+)',
-                r'User Account[:\s]+([^\n\r]+)'
-            ],
-            'gpu': [
-                r'GPU[:\s]+([^\n\r]+)',
-                r'Graphics[:\s]+([^\n\r]+)',
-                r'Video Card[:\s]+([^\n\r]+)'
-            ],
-            'bios_version': [
-                r'BIOS Version[:\s]+([^\n\r]+)',
-                r'BIOS[:\s]+([^\n\r]+)'
-            ],
-            'windows_language': [
-                r'Windows Language[:\s]+([^\n\r]+)',
-                r'Language[:\s]+([^\n\r]+)'
-            ],
-            'antivirus': [
-                r'Antivirus[:\s]+([^\n\r]+)',
-                r'Anti-virus[:\s]+([^\n\r]+)'
-            ],
-            'office_version': [
-                r'Office Version[:\s]+([^\n\r]+)',
-                r'Microsoft Office[:\s]+([^\n\r]+)'
-            ],
-            'os_activation': [
-                r'OS Activation[:\s]+([^\n\r]+)',
-                r'Windows Activation[:\s]+([^\n\r]+)',
-                r'Licensed[:\s]*\n'
-            ],
-            'network_mode': [
-                r'Network Mode[:\s]+([^\n\r]+)',
-                r'DHCP[:\s]+([^\n\r]+)',
-                r'IP Configuration[:\s]+([^\n\r]+)'
-            ]
+            # ... keep all other patterns as they are ...
+            'processor': [ r'Processor[:\\s]+([^\\n\\r]+)', r'CPU[:\\s]+([^\\n\\r]+)', r'Central Processor[:\\s]+([^\\n\\r]+)' ],
+            'memory': [ r'Total Physical Memory[:\\s]+([^\\n\\r]+)', r'RAM[:\\s]+([^\\n\\r]+)', r'Memory[:\\s]+([^\\n\\r]+)' ],
+            'anydesk_id': [ r'AnyDesk ID[:\\s]+(\\d+)', r'AnyDesk[:\\s]+(\\d+)', r'Remote ID[:\\s]+(\\d+)' ],
+            'user_email': [ r'User Email\\(s\\)[:\\s]+([^\\n\\r]+)', r'Email[:\\s]+([^\\n\\r]+)', r'User Account[:\\s]+([^\\n\\r]+)' ],
+            'gpu': [ r'GPU[:\\s]+([^\\n\\r]+)', r'Graphics[:\\s]+([^\\n\\r]+)', r'Video Card[:\\s]+([^\\n\\r]+)' ],
+            'bios_version': [ r'BIOS Version[:\\s]+([^\\n\\r]+)', r'BIOS[:\\s]+([^\\n\\r]+)' ],
+            'windows_language': [ r'Windows Language[:\\s]+([^\\n\\r]+)', r'Language[:\\s]+([^\\n\\r]+)' ],
+            'antivirus': [ r'Antivirus[:\\s]+([^\\n\\r]+)', r'Anti-virus[:\\s]+([^\\n\\r]+)' ],
+            'office_version': [ r'Office Version[:\\s]+([^\\n\\r]+)', r'Microsoft Office[:\\s]+([^\\n\\r]+)' ],
+            'os_activation': [ r'OS Activation[:\\s]+([^\\n\\r]+)', r'Windows Activation[:\\s]+([^\\n\\r]+)', r'Licensed[:\\s]*\\n' ],
+            'network_mode': [ r'Network Mode[:\\s]+([^\\n\\r]+)', r'DHCP[:\\s]+([^\\n\\r]+)', r'IP Configuration[:\\s]+([^\\n\\r]+)' ]
         }
 
     def extract_field(self, content: str, field_name: str) -> Optional[str]:
