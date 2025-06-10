@@ -332,6 +332,12 @@ class ITAssetDashboard:
         if 'show_discovered_only_filter' not in st.session_state: # For discovered assets filter
             st.session_state.show_discovered_only_filter = False
 
+        if 'detailed_assets_data' not in st.session_state: # For storing non-discovered assets
+            st.session_state.detailed_assets_data = {}
+        if 'discovered_assets_collection' not in st.session_state: # For storing discovered assets
+            st.session_state.discovered_assets_collection = {}
+
+
         # UI Customization Settings
         if 'show_summary_section' not in st.session_state:
             st.session_state.show_summary_section = True
@@ -912,15 +918,14 @@ class ITAssetDashboard:
                 value=st.session_state.get('show_details_table_section', True)
                 # key="show_details_table_cb"
             )
-        return filters # Return original filters dictionary, session state handles customization
+        # The filters dictionary returned here is based on st.session_state values, which is fine.
+        return filters
 
-    def filter_assets(self, filters):
-        """Apply filters to the assets data"""
-        filtered_assets = {}
+    def filter_assets(self, filters: Dict[str, Any], assets_to_filter: Dict[str, Any]) -> Dict[str, Any]:
+        """Apply filters to a given dictionary of assets."""
+        filtered_assets_dict = {}
         
-        for name, asset in st.session_state.assets_data.items():
-            # Asset name filter (Removed)
-            
+        for name, asset in assets_to_filter.items():
             # OS filter with normalized comparison
             if filters['selected_os']:
                 asset_os = asset.get('os_info', {}).get('version', '')
@@ -964,13 +969,18 @@ class ITAssetDashboard:
                     continue
             
             # Show only discovered assets filter
-            if filters['show_discovered_only']:
+            if filters['show_discovered_only']: # This key comes from current_filters_for_logic
+                # This specific filter is to *only* show discovered assets.
+                # So, if this flag is true, and the asset is NOT a discovered one, skip it.
                 if not asset.get('file_name', '').startswith('DISCOVERED_'):
                     continue
+            # If filters['show_discovered_only'] is False, this condition does nothing,
+            # and other filters determine inclusion. The separation of detailed vs discovered
+            # for display is handled in the run() method by choosing which dict to pass to this func.
 
-            filtered_assets[name] = asset
+            filtered_assets_dict[name] = asset
         
-        return filtered_assets
+        return filtered_assets_dict
 
     def render_asset_bubbles(self, assets):
         """Render asset bubbles in a grid layout"""
@@ -1234,8 +1244,12 @@ class ITAssetDashboard:
                     if isinstance(drive, dict) and 'size_gb' in drive:
                         storage_total += drive['size_gb']
 
+        metric_label = "Filtered Detailed Assets"
+        if st.session_state.show_discovered_only_filter:
+            metric_label = "Filtered Discovered Assets"
+
         with col1:
-            st.metric("Total Assets", total_assets)
+            st.metric(metric_label, total_assets)
         
         with col2:
             st.metric("Online Assets", online_assets, delta=f"{online_assets}/{total_assets}")
@@ -1818,9 +1832,25 @@ class ITAssetDashboard:
                                     st.markdown('</div>', unsafe_allow_html=True) # Close filter-pill div
                     st.markdown('</div>', unsafe_allow_html=True) # Close filter-pill-container
 
-            # Apply filters using the session state values that back the widgets
+            # Split assets into detailed and discovered collections
+            # This should happen *before* current_filters_for_logic is fully determined if filters depend on all data,
+            # but since render_sidebar_filters already used st.session_state.assets_data, it's fine here.
+            if 'assets_data' in st.session_state and st.session_state.assets_data:
+                temp_detailed_assets = {}
+                temp_discovered_assets = {}
+                for name, asset in st.session_state.assets_data.items():
+                    if asset.get('file_name', '').startswith('DISCOVERED_'):
+                        temp_discovered_assets[name] = asset
+                    else:
+                        temp_detailed_assets[name] = asset
+                st.session_state.detailed_assets_data = temp_detailed_assets
+                st.session_state.discovered_assets_collection = temp_discovered_assets
+            else: # Ensure these are initialized if assets_data is empty
+                st.session_state.detailed_assets_data = {}
+                st.session_state.discovered_assets_collection = {}
+
+
             current_filters_for_logic = {
-                # 'selected_assets': st.session_state.selected_assets_filter, # Removed
                 'selected_os': st.session_state.selected_os_filter,
                 'selected_manufacturers': st.session_state.selected_manufacturers_filter,
                 'min_ram': st.session_state.ram_range_filter[0] if st.session_state.ram_range_filter else default_min_ram,
@@ -1832,35 +1862,55 @@ class ITAssetDashboard:
                 'anydesk_search': st.session_state.anydesk_search_filter,
                 'search_term': st.session_state.search_term_filter
             }
-            filtered_assets = self.filter_assets(current_filters_for_logic)
 
-            # Render asset details modal if open
-            self.render_asset_details_modal(filtered_assets) # Modal can be rendered early
+            # Determine which collection of assets to filter and display
+            assets_for_main_view = {}
+            if st.session_state.show_discovered_only_filter:
+                # If "Show Only Auto-Discovered Assets" is checked, filter that collection
+                assets_for_main_view = self.filter_assets(current_filters_for_logic, st.session_state.discovered_assets_collection)
+            else:
+                # Otherwise, filter the detailed assets collection
+                assets_for_main_view = self.filter_assets(current_filters_for_logic, st.session_state.detailed_assets_data)
+
+
+            # Render asset details modal if open (operates on the currently relevant view)
+            self.render_asset_details_modal(assets_for_main_view)
 
             # --- Summary Metrics and Charts Section (Conditional) ---
             if st.session_state.get('show_summary_section', True):
                 st.markdown('<div class="summary-charts-container">', unsafe_allow_html=True)
-                self.render_overview_metrics(filtered_assets) # Metrics first
+                # Metrics should reflect the currently viewed filtered set (either detailed or discovered)
+                self.render_overview_metrics(assets_for_main_view)
                 st.divider()
-                self.render_system_statistics(filtered_assets)
-                self.render_status_distribution_chart(filtered_assets)
+                self.render_system_statistics(assets_for_main_view) # Similarly, charts for the current view
+                self.render_status_distribution_chart(assets_for_main_view) # And status chart
                 st.markdown('</div>', unsafe_allow_html=True)
                 st.divider()
 
             # Render main content - Asset Bubbles and Details Table (Conditional)
-            if filtered_assets:
-                if st.session_state.get('show_bubbles_section', True):
-                    self.render_asset_bubbles(filtered_assets)
-                    # Show divider only if both bubbles and table are shown, or if bubbles are hidden and table is shown
-                    if st.session_state.get('show_details_table_section', True):
-                         st.divider()
+            if st.session_state.get('show_bubbles_section', True):
+                if st.session_state.show_discovered_only_filter:
+                    st.subheader("Discovered Assets Overview")
+                    self.render_discovered_asset_bubbles(assets_for_main_view) # assets_for_main_view here IS the discovered assets
+                else:
+                    st.subheader("Assets Overview") # Existing subheader
+                    self.render_asset_bubbles(assets_for_main_view) # assets_for_main_view here IS the detailed assets
 
-                if st.session_state.get('show_details_table_section', True):
-                    self.render_asset_details(filtered_assets)
-            else:
-                # This part remains, showing welcome/no assets message
-                if st.session_state.assets_data: # Check if assets were loaded but all filtered out
-                    st.warning("No assets match the current filter criteria. Please adjust your filters.")
+                # Divider only if table is also shown
+                if st.session_state.get('show_details_table_section', True) and assets_for_main_view:
+                    st.divider()
+
+            # Details Table Section (operates on the same filtered set as bubbles)
+            if st.session_state.get('show_details_table_section', True):
+                # No separate subheader for table needed if it follows bubbles for the same data type
+                self.render_asset_details(assets_for_main_view)
+
+            # Handle message for no assets matching filters
+            if not assets_for_main_view:
+                if st.session_state.show_discovered_only_filter:
+                    st.info("No auto-discovered assets match the current filters, or no assets have been discovered yet.")
+                elif st.session_state.assets_data: # Check if any assets were loaded at all
+                    st.warning("No detailed assets match the current filter criteria. Try adjusting your filters or view auto-discovered assets.")
                 else:
                     st.info("""
                     **Welcome to the IT Asset Management Dashboard!**
@@ -1882,6 +1932,72 @@ class ITAssetDashboard:
             # Potentially log full traceback for debugging
             import traceback
             logger.error(traceback.format_exc())
+
+
+    def render_discovered_asset_bubbles(self, discovered_assets: Dict[str, Any]):
+        """Render a simpler view for discovered assets."""
+        if not discovered_assets:
+            st.info("No discovered assets to display or match the current filters.")
+            return
+
+        # st.subheader("Discovered Assets Overview") # Subheader moved to run()
+
+        assets_list = list(discovered_assets.items())
+        cols_per_row = 5 # Or choose a different layout if desired
+
+        for i in range(0, len(assets_list), cols_per_row):
+            cols = st.columns(cols_per_row)
+            row_assets = assets_list[i:i + cols_per_row]
+
+            for j, (name, asset) in enumerate(row_assets):
+                with cols[j]:
+                    ip_address = asset.get('network_info', {}).get('ip_address', 'N/A')
+                    mac_address = asset.get('network_info', {}).get('mac_address', 'N/A')
+                    vendor = asset.get('vendor', 'N/A') # Assuming AssetParser now provides this
+                    if vendor is None: vendor = 'N/A' # Ensure it's not None for display
+                    discovery_date_str = asset.get('discovery_date', 'N/A')
+                    if discovery_date_str and discovery_date_str != 'N/A':
+                        try:
+                            discovery_date_dt = datetime.fromisoformat(discovery_date_str)
+                            discovery_date_display = discovery_date_dt.strftime("%Y-%m-%d")
+                        except ValueError:
+                            discovery_date_display = discovery_date_str # Display as is if not valid ISO format
+                    else:
+                        discovery_date_display = "N/A"
+
+
+                    detected_os_type = asset.get('os_info', {}).get('detected_os_type')
+                    os_icon_html = ""
+                    if detected_os_type:
+                        icon_char = "❓"
+                        if detected_os_type == "Windows": icon_char = "🪟"
+                        elif detected_os_type == "Linux": icon_char = "🐧"
+                        elif detected_os_type == "macOS": icon_char = ""
+                        os_icon_html = f'<span class="os-icon" title="{detected_os_type}" style="opacity: 0.7; font-size: 0.9em; margin-right: 4px;">{icon_char}</span>'
+
+                    name_url_encoded = urllib.parse.quote(name)
+
+                    bubble_html = f"""
+                    <div class="asset-bubble discovered-asset-bubble">
+                        <div class="asset-bubble-content">
+                            <div class="asset-header">
+                                {os_icon_html}
+                                <a class="asset-name-link" href="/?view_asset={name_url_encoded}" target="_self">{name}</a>
+                                <div class="asset-ip" style="font-size: 0.9em; opacity: 0.8;">{ip_address}</div>
+                            </div>
+                            <div class="asset-details-group" style="font-size: 0.8em;">
+                                <div class="asset-mac">MAC: {mac_address}</div>
+                                <div class="asset-vendor" title="{vendor}">Vendor: { (vendor[:20] + '...') if len(vendor) > 23 else vendor }</div>
+                                <div class="asset-discovery-date">Seen: {discovery_date_display}</div>
+                            </div>
+                            <div class="asset-footer-group">
+                                <span class="status-online" style="font-size: 0.85em;">Online (Discovered)</span>
+                            </div>
+                        </div>
+                    </div>
+                    """
+                    st.markdown(bubble_html, unsafe_allow_html=True)
+
 
     def _process_nmap_scan_queue(self):
         """Process one asset from the Nmap scan queue."""
