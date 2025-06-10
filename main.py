@@ -324,6 +324,9 @@ class ITAssetDashboard:
             st.session_state.search_term_filter = ""
         # selected_assets_filter is removed
 
+        if 'network_discovery_range' not in st.session_state: # For network discovery
+            st.session_state.network_discovery_range = "192.168.1.0/24" # Default, adjust as needed
+
         # UI Customization Settings
         if 'show_summary_section' not in st.session_state:
             st.session_state.show_summary_section = True
@@ -348,6 +351,7 @@ class ITAssetDashboard:
             # -A: Enable OS detection, version detection, script scanning, and traceroute
             # -v: Verbose
             # -sn: Ping Scan - disable port scan. Used for Quick Scan.
+            # -PR: ARP Ping scan
 
             command = []
             if scan_type == "Quick Scan":
@@ -356,6 +360,9 @@ class ITAssetDashboard:
             elif scan_type == "Full Scan":
                 command = [nmap_executable_path, "-T4", "-A", "-v", "-Pn", ip_address]
                 logger.info(f"Executing Nmap Full Scan for {ip_address}: {' '.join(command)}")
+            elif scan_type == "MAC Scan": # New scan type
+                command = [nmap_executable_path, "-sn", "-PR", "-T4", ip_address] # ARP Ping Scan
+                logger.info(f"Executing Nmap MAC Scan for {ip_address}: {' '.join(command)}")
             else:
                 result["status"] = "error"
                 result["error_message"] = f"Invalid scan type: {scan_type}"
@@ -385,20 +392,24 @@ class ITAssetDashboard:
 
                 logger.info(f"Nmap {scan_type} for {ip_address}: Parsed status: {result['status']}.")
 
-                if scan_type == "Full Scan":
+                # MAC address parsing for Full Scan and MAC Scan
+                if scan_type == "Full Scan" or scan_type == "MAC Scan":
                     mac_match = re.search(r"MAC Address: ([0-9A-Fa-f:]{17})", process.stdout, re.IGNORECASE)
                     if mac_match:
                         result["mac_address"] = mac_match.group(1).upper()
-                        logger.info(f"Nmap Full Scan for {ip_address}: MAC Address found: {result['mac_address']}")
+                        logger.info(f"Nmap {scan_type} for {ip_address}: MAC Address found: {result['mac_address']}")
                     else:
-                        # Attempt to find MAC in other formats for some OSes (e.g., Linux `nmap localhost`)
-                        mac_alt_match = re.search(r"Station MAC: ([0-9A-Fa-f:]{17})", process.stdout, re.IGNORECASE) # Common in -A for local machine
+                        # Attempt to find MAC in other formats (e.g., for local machine or different Nmap versions/OS)
+                        mac_alt_match = re.search(r"Station MAC: ([0-9A-Fa-f:]{17})", process.stdout, re.IGNORECASE)
                         if mac_alt_match:
                             result["mac_address"] = mac_alt_match.group(1).upper()
-                            logger.info(f"Nmap Full Scan for {ip_address}: Alternate MAC Address found: {result['mac_address']}")
-                        else:
+                            logger.info(f"Nmap {scan_type} for {ip_address}: Alternate MAC Address found: {result['mac_address']}")
+                        elif scan_type == "MAC Scan" and result["status"] == "online": # If MAC scan says online but no MAC, explicitly log
+                            logger.info(f"Nmap MAC Scan for {ip_address}: Host is online, but MAC Address not found in output.")
+                        elif scan_type == "Full Scan": # Only log MAC not found for Full Scan if it was expected
                             logger.info(f"Nmap Full Scan for {ip_address}: MAC Address not found in output.")
-                # For Quick Scan, result["mac_address"] remains None
+
+                # For Quick Scan, result["mac_address"] remains None (as it doesn't typically fetch it)
             else:
                 result["status"] = "error"
                 result["error_message"] = f"Nmap {scan_type} for {ip_address} failed with return code {process.returncode}. Error: {process.stderr}"
@@ -442,11 +453,13 @@ class ITAssetDashboard:
                         if 'network_info' not in asset_data:
                             asset_data['network_info'] = {}
 
-                        # Set initial nmap_scan_status and default status from parser
-                        asset_data['network_info']['nmap_scan_status'] = 'pending' # Default for potential scan
-                        if 'status' not in asset_data['network_info']: # if parser didn't set one
-                             asset_data['network_info']['status'] = 'unknown'
+                        # Explicitly set status to 'pending scan' at initial loading
+                        asset_data['network_info']['status'] = 'pending scan'
 
+                        # Set initial nmap_scan_status
+                        asset_data['network_info']['nmap_scan_status'] = 'pending' # Default for potential scan
+                        # Note: The 'status' from asset_parser (like 'online'/'offline') is now overridden
+                        # and will be updated by the nmap scan results later.
 
                         asset_name = asset_data.get('computer_name', file_path.stem)
                         ip_address = asset_data.get('network_info', {}).get('ip_address')
@@ -716,8 +729,9 @@ class ITAssetDashboard:
         st.session_state.search_term_filter = search_term
 
         # Nmap Settings
-        st.sidebar.subheader("Network Scanning") # Simplified header
+        st.sidebar.subheader("Network Scanning & Discovery") # Updated header
 
+        # Nmap Live Scans (per asset)
         scan_type_options = ["Disabled", "Quick Scan", "Full Scan"]
         # Ensure st.session_state.nmap_scan_type is valid, otherwise default to "Disabled"
         try:
@@ -742,10 +756,34 @@ class ITAssetDashboard:
         nmap_path_ui = st.sidebar.text_input(
             "Nmap Executable Path",  # More descriptive label
             value=st.session_state.nmap_path,
+            key="nmap_path_input", # Added key
+            on_change=lambda: setattr(st.session_state, 'nmap_path', st.session_state.nmap_path_input),
             help="Path to nmap executable (e.g., '/usr/bin/nmap' or 'C:\\Program Files (x86)\\Nmap\\nmap.exe'). Default is 'nmap' (assumes it's in system PATH)."
         )
-        if nmap_path_ui != st.session_state.nmap_path:
-            st.session_state.nmap_path = nmap_path_ui
+        # No need for: if nmap_path_ui != st.session_state.nmap_path: ... due to on_change
+
+        st.sidebar.divider() # Visual separator
+
+        # Network Discovery Section
+        st.sidebar.subheader("Network Asset Discovery")
+
+        network_range_input = st.sidebar.text_input(
+            "Network Range for Discovery (e.g., 192.168.1.0/24)",
+            value=st.session_state.network_discovery_range,
+            key="network_discovery_range_input",
+            on_change=lambda: setattr(st.session_state, 'network_discovery_range', st.session_state.network_discovery_range_input),
+            help="Define the network range for Nmap discovery scan."
+        )
+        # No need for: if network_range_input != st.session_state.network_discovery_range: ...
+
+        if st.sidebar.button("📡 Discover Network Assets", key="discover_assets_button"):
+            with st.spinner(f"Discovering assets in {st.session_state.network_discovery_range}... This may take a while."):
+                self.discover_network_assets(
+                    network_range=st.session_state.network_discovery_range,
+                    nmap_executable_path=st.session_state.nmap_path
+                )
+            st.toast("Network discovery process completed!", icon="✅")
+            st.rerun()
 
         return {
             # 'selected_assets': selected_assets, # Removed
@@ -880,25 +918,36 @@ class ITAssetDashboard:
         status_text_class = ""
         plain_status_text = ""
 
-        if nmap_scan_status == 'scanning':
-            plain_status_text = "Scanning"
-            status_indicator_class = "status-indicator-scanning"
-            status_text_class = "status-scanning"
-        elif nmap_scan_status == 'pending':
-            plain_status_text = "Scan pending"
+        # Priority for nmap status
+        if nmap_scan_status == 'pending':
+            plain_status_text = "Pending Scan" # Updated text
             status_indicator_class = "status-indicator-pending"
             status_text_class = "status-pending"
+        elif nmap_scan_status == 'scanning':
+            plain_status_text = "Scanning..." # Updated text
+            status_indicator_class = "status-indicator-scanning"
+            status_text_class = "status-scanning"
         elif nmap_scan_status == 'failed':
             plain_status_text = "Scan failed"
             status_indicator_class = "status-indicator-failed"
             status_text_class = "status-failed"
-        elif status == 'online':
-            plain_status_text = "Online"
-            status_indicator_class = "status-indicator-online"
-            status_text_class = "status-online"
-        else:
-            plain_status_text = "Offline"
-            status_indicator_class = "status-indicator-offline"
+        # Fallback to network_info.status if nmap scan is completed or not actively pending/scanning
+        elif nmap_scan_status == 'completed' or nmap_scan_status == 'disabled' or nmap_scan_status == 'unknown':
+            if status == 'online':
+                plain_status_text = "Online"
+                status_indicator_class = "status-indicator-online"
+                status_text_class = "status-online"
+            elif status == 'offline':
+                plain_status_text = "Offline"
+                status_indicator_class = "status-indicator-offline"
+                status_text_class = "status-offline"
+            else: # Default for 'pending scan' (initial load) or other 'unknown' network_info.status
+                plain_status_text = "Pending Scan"
+                status_indicator_class = "status-indicator-pending"
+                status_text_class = "status-pending"
+        else: # Should ideally not be reached if nmap_scan_status is one of the above
+            plain_status_text = "Unknown"
+            status_indicator_class = "status-indicator-offline" # Default to offline visuals
             status_text_class = "status-offline"
         
         storage_class = "low-storage" if low_storage else ""
@@ -1236,6 +1285,103 @@ class ITAssetDashboard:
             
             with tab4:
                 self.dashboard_components.render_network_info(asset)
+
+    def discover_network_assets(self, network_range: str, nmap_executable_path: str):
+        """Discovers assets on the network, updates known ones, and logs new ones."""
+        logger.info(f"Starting network asset discovery for range: {network_range}")
+        live_ips = []
+
+        try:
+            # 1. Broad Nmap scan to find live hosts (-sn: Ping Scan, no ports; -T4: Aggressive timing)
+            # Use -PR for ARP scan on localnet, -PU for UDP ping to cover more ground.
+            # -n for no DNS resolution to speed up.
+            # Consider a shorter timeout for this initial discovery scan.
+            # command_discover = [nmap_executable_path, "-sn", "-T4", "-PU", "-PR", "-n", network_range]
+            command_discover = [nmap_executable_path, "-sn", "-T4", "-n", network_range] # Simpler initial scan
+            logger.info(f"Executing network discovery scan: {' '.join(command_discover)}")
+
+            process_discover = subprocess.run(
+                command_discover,
+                capture_output=True,
+                text=True,
+                timeout=300  # 5 minutes timeout for discovery scan
+            )
+
+            if process_discover.returncode == 0:
+                # Regex to find IP addresses in "Nmap scan report for <IP_ADDRESS>" lines
+                # then check if "Host is up" follows.
+                # A more robust way is to parse line by line.
+                output_lines = process_discover.stdout.splitlines()
+                current_ip = None
+                for i, line in enumerate(output_lines):
+                    ip_match = re.search(r"Nmap scan report for (\S+)", line)
+                    if ip_match:
+                        current_ip = ip_match.group(1)
+                        # Check next few lines for "Host is up"
+                        for j in range(i + 1, min(i + 4, len(output_lines))):
+                            if "Host is up" in output_lines[j]:
+                                if current_ip not in live_ips: # Avoid duplicates if multiple "Host is up"
+                                    live_ips.append(current_ip)
+                                    logger.info(f"Discovery: Found live host at {current_ip}")
+                                break # Found "Host is up", move to next potential IP
+                        current_ip = None # Reset for next "Nmap scan report"
+                logger.info(f"Discovery: Found {len(live_ips)} live hosts: {live_ips}")
+            else:
+                logger.error(f"Network discovery scan failed. Nmap stderr: {process_discover.stderr}")
+                st.error(f"Network discovery scan failed. Check logs. Error: {process_discover.stderr}")
+                return
+
+        except subprocess.TimeoutExpired:
+            logger.error(f"Network discovery scan for {network_range} timed out.")
+            st.warning(f"Network discovery scan timed out for {network_range}.")
+            return # Stop processing if discovery scan times out
+        except FileNotFoundError:
+            logger.error(f"Nmap command not found at '{nmap_executable_path}' during discovery.")
+            st.error(f"Nmap not found at '{nmap_executable_path}'. Cannot perform discovery.")
+            return
+        except Exception as e:
+            logger.error(f"An error occurred during initial network discovery: {str(e)}")
+            st.error(f"Discovery error: {str(e)}")
+            return
+
+        # 2. For each live IP, get MAC and update/log asset
+        for ip_address in live_ips:
+            logger.info(f"Processing live IP: {ip_address}")
+            mac_scan_result = self._run_nmap_scan(ip_address, nmap_executable_path, "MAC Scan")
+
+            discovered_mac = mac_scan_result.get("mac_address")
+            asset_found_by_mac = False
+            asset_found_by_ip = False
+
+            if discovered_mac:
+                logger.info(f"Discovery: IP {ip_address} has MAC {discovered_mac}")
+                for asset_name, asset_data in st.session_state.assets_data.items():
+                    if asset_data.get('network_info', {}).get('mac_address', '').upper() == discovered_mac:
+                        logger.info(f"Discovery: Known asset '{asset_name}' found by MAC {discovered_mac} at new IP {ip_address} (was {asset_data['network_info'].get('ip_address')}). Updating.")
+                        asset_data['network_info']['ip_address'] = ip_address
+                        asset_data['network_info']['status'] = 'online'
+                        asset_data['network_info']['nmap_scan_status'] = 'completed' # Or 'verified_online'
+                        asset_data['network_info']['last_seen_via_discovery'] = datetime.now().isoformat()
+                        asset_found_by_mac = True
+                        break
+                if not asset_found_by_mac:
+                    logger.info(f"Discovery: New device found by MAC. IP: {ip_address}, MAC: {discovered_mac}. Consider adding to assets if persistent.")
+                    # Optionally, create a placeholder for new devices here if desired in future
+            else: # No MAC found from MAC Scan
+                logger.info(f"Discovery: MAC address not found for live IP {ip_address}. Will try to match by IP.")
+                for asset_name, asset_data in st.session_state.assets_data.items():
+                    if asset_data.get('network_info', {}).get('ip_address') == ip_address:
+                        logger.info(f"Discovery: Known asset '{asset_name}' found by IP {ip_address} (MAC not identified in this scan). Updating status.")
+                        asset_data['network_info']['status'] = 'online'
+                        asset_data['network_info']['nmap_scan_status'] = 'completed' # Or 'verified_online'
+                        asset_data['network_info']['last_seen_via_discovery'] = datetime.now().isoformat()
+                        asset_found_by_ip = True
+                        break
+                if not asset_found_by_ip:
+                    logger.info(f"Discovery: New live IP {ip_address} found (MAC unknown). Consider investigating or adding to assets if persistent.")
+
+        logger.info("Network asset discovery process completed.")
+        # Future: Implement logic to mark assets not found as potentially offline.
 
     def run(self):
         """Main application entry point"""
