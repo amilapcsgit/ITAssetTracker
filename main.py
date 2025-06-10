@@ -1500,16 +1500,17 @@ class ITAssetDashboard:
             logger.info(f"Processing live IP for detailed discovery: {ip_address}")
             scan_result = self._run_nmap_scan(ip_address, nmap_executable_path, "Discovery Detail Scan")
 
+            # Ensure all necessary variables are extracted from scan_result here
             discovered_mac = scan_result.get("mac_address")
-            detected_os = scan_result.get("detected_os_type", "Unknown") # From _run_nmap_scan
+            detected_os = scan_result.get("detected_os_type", "Unknown")
             nmap_raw_output = scan_result.get("nmap_output", "")
-            found_hostname = scan_result.get("hostname") # From _run_nmap_scan
+            hostname_from_scan = scan_result.get("hostname") # Critical for NameError fix
 
             asset_found_by_mac = False
             data_changed_by_discovery_this_iteration = False
 
             if discovered_mac:
-                logger.info(f"Discovery: IP {ip_address} has MAC {discovered_mac}, OS: {detected_os}, Hostname: {found_hostname}")
+                logger.info(f"Discovery: IP {ip_address} has MAC {discovered_mac}, OS: {detected_os}, Hostname: {hostname_from_scan}")
                 # Check if this MAC already exists
                 for asset_name, asset_data_existing in st.session_state.assets_data.items():
                     if asset_data_existing.get('network_info', {}).get('mac_address', '').upper() == discovered_mac:
@@ -1524,12 +1525,11 @@ class ITAssetDashboard:
                         asset_data_existing['network_info']['last_seen_via_discovery'] = datetime.now().isoformat()
                         if detected_os != "Unknown":
                             asset_data_existing.setdefault('os_info', {})['detected_os_type'] = detected_os
-                        # Optionally update hostname if different and useful
+
                         if hostname_from_scan and hostname_from_scan != ip_address and asset_data_existing.get('computer_name') != hostname_from_scan:
-                            logger.info(f"Updating computer name for {asset_name} to {hostname_from_scan} based on scan.")
-                            # This is a potentially significant change; consider if asset_name (dict key) should also change.
-                            # For now, just updating the 'computer_name' field within the asset data.
+                            logger.info(f"Discovery: Updating hostname for existing asset '{asset_name}' to '{hostname_from_scan}'.")
                             asset_data_existing['computer_name'] = hostname_from_scan
+                            # Potentially update the Computer Name in the asset's .txt file as well (consider this for future enhancement)
                         data_changed_by_discovery_this_iteration = True
 
                         # Update the asset's .txt file
@@ -1573,16 +1573,17 @@ class ITAssetDashboard:
                         break # Found and processed this MAC
 
                 if not asset_found_by_mac and discovered_mac: # Only create new if MAC exists and not found
-                    # New computer_name_to_use logic
-                    computer_name_to_use = found_hostname if found_hostname else f"Discovered-{discovered_mac.replace(':', '') if discovered_mac else ip_address.replace('.', '-')}"
+                    # Corrected computer_name_to_use logic as per subtask
+                    computer_name_to_use = hostname_from_scan if hostname_from_scan else f"Discovered-{discovered_mac.replace(':', '') if discovered_mac else ip_address.replace('.', '-')}"
                     logger.info(f"Discovery: Determined computer_name_to_use: {computer_name_to_use}")
 
                     vendor = self.get_mac_vendor_details(discovered_mac) or 'N/A'
 
                     logger.info(f"Discovery: Final chosen name for new asset: {computer_name_to_use} (IP: {ip_address}, MAC: {discovered_mac})")
-                    new_asset_filename = f"DISCOVERED_{discovered_mac.replace(':', '')}.txt"
+                    new_asset_filename = f"DISCOVERED_{discovered_mac.replace(':', '')}.txt" # Filename based on MAC
                     new_asset_filepath = self.assets_folder / new_asset_filename
 
+                    # Construct file_content ensuring all variables are defined
                     file_content = (
                         f"Computer Name: {computer_name_to_use}\n"
                         f"IP Address: {ip_address}\n"
