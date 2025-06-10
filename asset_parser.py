@@ -101,14 +101,17 @@ class AssetParser:
         }
 
     def extract_field(self, content: str, field_name: str) -> Optional[str]:
-        """Extract a specific field from the content using regex patterns"""
+        """Extract a specific field from the content using regex patterns."""
         patterns = self.patterns.get(field_name, [])
-        
+
         for pattern in patterns:
-            match = re.search(pattern, content, re.IGNORECASE | re.MULTILINE)
+            # --- MODIFICATION ---
+            # Added the re.DOTALL flag to allow '.' to match newlines.
+            # This is critical for capturing multi-line Nmap output.
+            match = re.search(pattern, content, re.IGNORECASE | re.MULTILINE | re.DOTALL)
             if match:
                 return match.group(1).strip()
-        
+
         return None
 
     def parse_memory_size(self, memory_str: str) -> Optional[float]:
