@@ -1961,14 +1961,9 @@ class ITAssetDashboard:
 
 
     def render_discovered_asset_bubbles(self, discovered_assets: Dict[str, Any]):
-        """Render a simpler view for discovered assets."""
-        # The "no assets" message is now handled in the run() method before calling this.
-        # if not discovered_assets:
-        #     st.info("No discovered assets to display or match the current filters.")
-        #     return
-
+        """Render a simpler view for discovered assets with corrected HTML rendering."""
         assets_list = list(discovered_assets.items())
-        cols_per_row = 5 # Or choose a different layout if desired
+        cols_per_row = 5
 
         for i in range(0, len(assets_list), cols_per_row):
             cols = st.columns(cols_per_row)
@@ -1976,64 +1971,57 @@ class ITAssetDashboard:
 
             for j, (name, asset) in enumerate(row_assets):
                 with cols[j]:
-                    ip_address_raw = asset.get('network_info', {}).get('ip_address', 'N/A')
-                    mac_address_raw = asset.get('network_info', {}).get('mac_address', 'N/A')
-                    vendor_raw = asset.get('vendor', 'N/A')
-                    if vendor_raw is None: vendor_raw = 'N/A'
+                    # --- Data Preparation ---
+                    ip_address = asset.get('network_info', {}).get('ip_address', 'N/A')
+                    mac_address = asset.get('network_info', {}).get('mac_address', 'N/A')
+                    vendor = asset.get('vendor', 'Unknown Vendor')
+                    vendor_display = (vendor[:20] + '...') if len(vendor) > 23 else vendor
 
-                    discovery_date_str_raw = asset.get('discovery_date', 'N/A')
+                    discovery_date_str = asset.get('discovery_date', 'N/A')
                     discovery_date_display = "N/A"
-                    if discovery_date_str_raw and discovery_date_str_raw != 'N/A':
+                    if discovery_date_str and discovery_date_str != 'N/A':
                         try:
-                            discovery_date_dt = datetime.fromisoformat(discovery_date_str_raw)
-                            discovery_date_display = html.escape(discovery_date_dt.strftime("%Y-%m-%d"))
+                            # Ensure datetime is imported if not already: from datetime import datetime
+                            discovery_date_dt = datetime.fromisoformat(discovery_date_str)
+                            discovery_date_display = discovery_date_dt.strftime("%Y-%m-%d")
                         except ValueError:
-                            discovery_date_display = html.escape(discovery_date_str_raw)
+                            discovery_date_display = discovery_date_str
 
-                    name_from_asset = name # 'name' is the key from the dictionary, usually computer_name
-                    escaped_name = html.escape(str(name_from_asset))
-                    escaped_ip_address = html.escape(str(ip_address_raw))
-                    escaped_mac_address = html.escape(str(mac_address_raw))
-                    escaped_vendor_full = html.escape(str(vendor_raw))
-                    escaped_vendor_display = (escaped_vendor_full[:20] + '...') if len(escaped_vendor_full) > 23 else escaped_vendor_full
-
-
-                    detected_os_type_raw = asset.get('os_info', {}).get('detected_os_type')
+                    detected_os_type = asset.get('os_info', {}).get('detected_os_type')
                     os_icon_html = ""
-                    if detected_os_type_raw:
+                    if detected_os_type:
                         icon_char = "❓"
-                        if detected_os_type_raw == "Windows": icon_char = "🪟"
-                        elif detected_os_type_raw == "Linux": icon_char = "🐧"
-                        elif detected_os_type_raw == "macOS": icon_char = ""
-                        # icon_char itself does not need escaping as it's a fixed set of safe unicode.
-                        # Title attribute should be escaped.
-                        escaped_detected_os_type_title = html.escape(str(detected_os_type_raw))
-                        os_icon_html = f'<span class="os-icon" title="{escaped_detected_os_type_title}" style="opacity: 0.7; font-size: 0.9em; margin-right: 4px;">{icon_char}</span>'
+                        if detected_os_type == "Windows": icon_char = "🪟"
+                        elif detected_os_type == "Linux": icon_char = "🐧"
+                        elif detected_os_type == "macOS": icon_char = ""
+                        os_icon_html = f'<span title="{detected_os_type}" style="opacity: 0.7; font-size: 0.9em;">{icon_char}</span>'
 
-                    name_url_encoded = urllib.parse.quote(name_from_asset) # URL encoding for href
+                    # Ensure urllib.parse is imported: import urllib.parse
+                    name_url_encoded = urllib.parse.quote(name)
 
+                    # --- HTML String Construction ---
                     bubble_html = f"""
-                    <div class="asset-bubble discovered-asset-bubble">
-                        <div class="asset-bubble-content">
-                            <div class="asset-header">
-                                {os_icon_html}
-                                <a class="asset-name-link" href="/?view_asset={name_url_encoded}" target="_self">{escaped_name}</a>
-                                <div class="asset-ip" style="font-size: 0.9em; opacity: 0.8;">{escaped_ip_address}</div>
-                            </div>
-                            <div class="asset-details-group" style="font-size: 0.8em;">
-                                <div class="asset-mac">MAC: {escaped_mac_address}</div>
-                                <div class="asset-vendor" title="{escaped_vendor_full}">Vendor: {escaped_vendor_display}</div>
-                                <div class="asset-discovery-date">Seen: {discovery_date_display}</div>
-                            </div>
-                            <div class="asset-footer-group">
-                                <span class="status-online" style="font-size: 0.85em;">Online (Discovered)</span>
+                    <a href="/?view_asset={name_url_encoded}" target="_self" class="asset-bubble-link">
+                        <div class="asset-bubble status-indicator-online">
+                            <div class="asset-bubble-content">
+                                <div class="asset-header">
+                                    <span class="asset-name">{os_icon_html} {name}</span>
+                                    <div class="asset-ip">{ip_address}</div>
+                                </div>
+                                <div class="asset-details-group" style="font-size: 0.8em;">
+                                    <div>MAC: {mac_address}</div>
+                                    <div title="{vendor}">Vendor: {vendor_display}</div>
+                                    <div>Seen: {discovery_date_display}</div>
+                                </div>
+                                <div class="asset-footer-group">
+                                    <span class="status-online" style="font-size: 0.85em;">Discovered</span>
+                                </div>
                             </div>
                         </div>
-                    </div>
+                    </a>
                     """
-                    # Ensure this is the exact call used for rendering.
-                    st.markdown(bubble_html, unsafe_allow_html=True)
 
+                    st.markdown(bubble_html, unsafe_allow_html=True)
 
     def _process_nmap_scan_queue(self):
         """Process one asset from the Nmap scan queue."""
