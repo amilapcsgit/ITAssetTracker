@@ -359,14 +359,22 @@ class ITAssetDashboard:
             # -PR: ARP Ping scan
             # -O: Enable OS detection
             # --osscan-guess: Guess OS more aggressively
+            # -sL: List Scan (DNS resolution)
 
             command = []
             # Mocked OS Scan for a specific IP
-            if scan_type == "OS Scan" and ip_address == "192.168.1.250": # Test IP for OS Scan
+            if scan_type == "OS Scan" and ip_address == "192.168.1.250":
                 logger.info(f"Returning MOCKED OS Scan result for test IP {ip_address}")
-                result["status"] = "online"
-                result["detected_os_type"] = "Windows" # Mocked OS type
+                result["status"] = "online" # Assuming host is up for OS scan to proceed
+                result["detected_os_type"] = "Windows"
                 result["nmap_output"] = "Mocked Nmap OS Scan Output for 192.168.1.250\nRunning: Microsoft Windows 10"
+                return result
+            # Mocked ReverseDNS Scan for a specific IP
+            if scan_type == "ReverseDNS Scan" and ip_address == "192.168.1.251": # Test IP for rDNS
+                logger.info(f"Returning MOCKED ReverseDNS Scan result for test IP {ip_address}")
+                result["status"] = "online" # Assumed, as -sL doesn't ping but needs host to be resolvable conceptually
+                result["hostname"] = "mocked-hostname.example.com"
+                result["nmap_output"] = f"Mocked Nmap ReverseDNS Scan Output for 192.168.1.251\nNmap scan report for mocked-hostname.example.com ({ip_address})"
                 return result
 
             if scan_type == "Quick Scan":
@@ -379,8 +387,11 @@ class ITAssetDashboard:
                 command = [nmap_executable_path, "-sn", "-PR", "-T4", ip_address]
                 logger.info(f"Executing Nmap MAC Scan for {ip_address}: {' '.join(command)}")
             elif scan_type == "OS Scan":
-                command = [nmap_executable_path, "-O", "--osscan-guess", "-T4", "-Pn", ip_address] # Added -Pn to ensure it scans even if host seems down
+                command = [nmap_executable_path, "-O", "--osscan-guess", "-T4", "-Pn", ip_address]
                 logger.info(f"Executing Nmap OS Scan for {ip_address}: {' '.join(command)}")
+            elif scan_type == "ReverseDNS Scan":
+                command = [nmap_executable_path, "-sL", "-Pn", ip_address] # List scan, treat as online
+                logger.info(f"Executing Nmap ReverseDNS Scan for {ip_address}: {' '.join(command)}")
             else:
                 result["status"] = "error"
                 result["error_message"] = f"Invalid scan type: {scan_type}"
@@ -449,6 +460,26 @@ class ITAssetDashboard:
                         logger.info(f"Nmap {scan_type} for {ip_address}: Detected OS Type: {result['detected_os_type']}")
                     else:
                         logger.info(f"Nmap {scan_type} for {ip_address}: OS Type could not be determined from output.")
+
+                # Hostname parsing for ReverseDNS Scan
+                if scan_type == "ReverseDNS Scan":
+                    # Example output: "Nmap scan report for hostname.example.com (192.168.1.1)"
+                    # Or just "Nmap scan report for 192.168.1.1" if no rDNS
+                    hostname_match = re.search(r"Nmap scan report for (\S+) \((\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})\)", process.stdout)
+                    if hostname_match:
+                        potential_hostname = hostname_match.group(1)
+                        ip_in_report = hostname_match.group(2)
+                        if potential_hostname != ip_in_report: # If hostname is different from IP, it's likely a valid rDNS name
+                            result["hostname"] = potential_hostname
+                            logger.info(f"Nmap ReverseDNS Scan for {ip_address}: Found hostname: {result['hostname']}")
+                        else:
+                            logger.info(f"Nmap ReverseDNS Scan for {ip_address}: No distinct hostname found (rDNS likely same as IP).")
+                    else: # Fallback if the primary regex doesn't match (e.g., only IP in report)
+                        simple_report_match = re.search(r"Nmap scan report for (\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})", process.stdout)
+                        if simple_report_match and simple_report_match.group(1) == ip_address:
+                             logger.info(f"Nmap ReverseDNS Scan for {ip_address}: No hostname found, report is for IP only.")
+                        # else:
+                            # logger.info(f"Nmap ReverseDNS Scan for {ip_address}: Could not parse hostname from output: {process.stdout.splitlines()[0] if process.stdout else 'Empty output'}")
 
 
                 # For Quick Scan, result["mac_address"] remains None (as it doesn't typically fetch it)
@@ -1489,24 +1520,49 @@ class ITAssetDashboard:
                         break # Found and processed this MAC
 
                 if not asset_found_by_mac:
-                    logger.info(f"Discovery: New device found by MAC. IP: {ip_address}, MAC: {discovered_mac}. Creating new asset file.")
+                    computer_name_to_use = None
+                    # Attempt rDNS Lookup first
+                    logger.info(f"Discovery: Attempting rDNS lookup for new MAC {discovered_mac} at IP {ip_address}")
+                    rdns_result = self._run_nmap_scan(ip_address, nmap_executable_path, "ReverseDNS Scan")
+                    if rdns_result and rdns_result.get("hostname"):
+                        # Ensure hostname is not just the IP address itself
+                        if rdns_result["hostname"] != ip_address:
+                            computer_name_to_use = rdns_result["hostname"]
+                            logger.info(f"Discovery: Using hostname from rDNS: {computer_name_to_use}")
+
+                    # Fetch vendor details (needed for Vendor field anyway, and for naming if rDNS fails)
                     vendor = self.get_mac_vendor_details(discovered_mac) or 'N/A'
-                    new_asset_filename = f"DISCOVERED_{discovered_mac.replace(':', '')}.txt"
+
+                    if not computer_name_to_use: # If rDNS failed or returned IP
+                        if vendor != 'N/A' and vendor != "Unknown Vendor" and vendor != "Unknown Vendor (No vendor field)" and vendor != "Unknown Vendor (JSON Decode Error)" and vendor != "Unknown Vendor (Invalid MAC format for API)":
+                            computer_name_to_use = f"{vendor} device ({ip_address})"
+                            logger.info(f"Discovery: Using vendor-based name: {computer_name_to_use}")
+                        else:
+                            computer_name_to_use = f"DISCOVERED_ASSET_{discovered_mac.replace(':', '')}"
+                            logger.info(f"Discovery: Using MAC-based fallback name: {computer_name_to_use}")
+
+                    # Final fallback if all else fails (should be rare)
+                    if not computer_name_to_use:
+                        computer_name_to_use = f"UNKNOWN_DEVICE_{discovered_mac.replace(':', '')}"
+
+                    logger.info(f"Discovery: Final chosen name for new asset: {computer_name_to_use} (IP: {ip_address}, MAC: {discovered_mac})")
+
+                    new_asset_filename = f"DISCOVERED_{discovered_mac.replace(':', '')}.txt" # Filename still MAC-based for uniqueness
                     new_asset_filepath = self.assets_folder / new_asset_filename
 
                     file_content = (
-                        f"Computer Name: DISCOVERED_{ip_address}\n"
+                        f"Computer Name: {computer_name_to_use}\n"
                         f"IP Address: {ip_address}\n"
                         f"MAC Address: {discovered_mac}\n"
                         f"Vendor: {vendor}\n"
-                        f"Status: online\n"
+                        f"Status: online\n" # Default status for newly discovered
                         f"DiscoveryDate: {datetime.now().isoformat()}\n"
                         f"Source: Network Discovery\n"
                     )
                     try:
                         with open(new_asset_filepath, 'w', encoding='utf-8') as f:
                             f.write(file_content)
-                        logger.info(f"Discovery: Created new asset file: {new_asset_filepath}")
+                        logger.info(f"Discovery: Created new asset file: {new_asset_filepath} with Computer Name: {computer_name_to_use}")
                         data_changed_by_discovery_this_iteration = True
                     except IOError as e:
                         logger.error(f"Discovery: Failed to write new asset file {new_asset_filepath}: {e}")
