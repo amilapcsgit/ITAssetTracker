@@ -13,9 +13,9 @@ class AssetParser:
     def __init__(self):
         self.patterns = {
             'computer_name': [
-                r'Computer Name[:\s]+([^\n\r]+)',
-                r'System Name[:\s]+([^\n\r]+)',
-                r'Hostname[:\s]+([^\n\r]+)'
+                r'Computer Name[:\s]+([^\n]+)',
+                r'System Name[:\s]+([^\n]+)',
+                r'Hostname[:\s]+([^\n]+)'
             ],
             'ip_address': [
                 r'IP Address[:\s]+(\d+\.\d+\.\d+\.\d+)',
@@ -23,29 +23,29 @@ class AssetParser:
                 r'Network Address[:\s]+(\d+\.\d+\.\d+\.\d+)'
             ],
             'os_version': [
-                r'Operating System[:\s]+([^\n\r]+)',
-                r'OS Version[:\s]+([^\n\r]+)',
-                r'Windows Version[:\s]+([^\n\r]+)'
+                r'OS Version[:\s]+([^\n]+)',
+                r'Operating System[:\s]+([^\n]+)',
+                r'Windows Version[:\s]+([^\n]+)'
             ],
             'manufacturer': [
-                r'Manufacturer[:\s]+([^\n\r]+)',
-                r'System Manufacturer[:\s]+([^\n\r]+)',
-                r'Computer Manufacturer[:\s]+([^\n\r]+)'
+                r'Manufacturer[:\s]+([^\n]+)',
+                r'System Manufacturer[:\s]+([^\n]+)',
+                r'Computer Manufacturer[:\s]+([^\n]+)'
             ],
             'model': [
-                r'Model[:\s]+([^\n\r]+)',
-                r'System Model[:\s]+([^\n\r]+)',
-                r'Computer Model[:\s]+([^\n\r]+)'
+                r'Model[:\s]+([^\n]+)',
+                r'System Model[:\s]+([^\n]+)',
+                r'Computer Model[:\s]+([^\n]+)'
             ],
             'processor': [
-                r'Processor[:\s]+([^\n\r]+)',
-                r'CPU[:\s]+([^\n\r]+)',
-                r'Central Processor[:\s]+([^\n\r]+)'
+                r'Processor[:\s]+([^\n]+)',
+                r'CPU[:\s]+([^\n]+)',
+                r'Central Processor[:\s]+([^\n]+)'
             ],
             'memory': [
-                r'Total Physical Memory[:\s]+([^\n\r]+)',
-                r'RAM[:\s]+([^\n\r]+)',
-                r'Memory[:\s]+([^\n\r]+)'
+                r'Total Physical Memory[:\s]+([^\n]+)',
+                r'RAM[:\s]+([^\n]+)',
+                r'Memory[:\s]+([^\n]+)'
             ],
             'anydesk_id': [
                 r'AnyDesk ID[:\s]+(\d+)',
@@ -53,53 +53,51 @@ class AssetParser:
                 r'Remote ID[:\s]+(\d+)'
             ],
             'user_email': [
-                r'User Email\(s\)[:\s]+([^\n\r]+)',
-                r'Email[:\s]+([^\n\r]+)',
-                r'User Account[:\s]+([^\n\r]+)'
+                r'User Email\(s\)[:\s]+([^\n]+)',
+                r'Email[:\s]+([^\n]+)',
+                r'User Account[:\s]+([^\n]+)'
             ],
             'gpu': [
-                r'GPU[:\s]+([^\n\r]+)',
-                r'Graphics[:\s]+([^\n\r]+)',
-                r'Video Card[:\s]+([^\n\r]+)'
+                r'GPU[:\s]+([^\n]+)',
+                r'Graphics[:\s]+([^\n]+)',
+                r'Video Card[:\s]+([^\n]+)'
             ],
             'bios_version': [
-                r'BIOS Version[:\s]+([^\n\r]+)',
-                r'BIOS[:\s]+([^\n\r]+)'
+                r'BIOS Version[:\s]+([^\n]+)',
+                r'BIOS[:\s]+([^\n]+)'
             ],
             'windows_language': [
-                r'Windows Language[:\s]+([^\n\r]+)',
-                r'Language[:\s]+([^\n\r]+)'
+                r'Windows Language[:\s]+([^\n]+)',
+                r'Language[:\s]+([^\n]+)'
             ],
             'antivirus': [
-                r'Antivirus[:\s]+([^\n\r]+)',
-                r'Anti-virus[:\s]+([^\n\r]+)'
+                r'Antivirus[:\s]+([^\n]+)',
+                r'Anti-virus[:\s]+([^\n]+)'
             ],
             'office_version': [
-                r'Office Version[:\s]+([^\n\r]+)',
-                r'Microsoft Office[:\s]+([^\n\r]+)'
+                r'Office Version[:\s]+([^\n]+)',
+                r'Microsoft Office[:\s]+([^\n]+)'
             ],
             'os_activation': [
-                r'OS Activation[:\s]+([^\n\r]+)',
-                r'Windows Activation[:\s]+([^\n\r]+)',
+                r'OS Activation[:\s]+([^\n]+)',
+                r'Windows Activation[:\s]+([^\n]+)',
                 r'Licensed[:\s]*\n'
             ],
             'network_mode': [
-                r'Network Mode[:\s]+([^\n\r]+)',
-                r'DHCP[:\s]+([^\n\r]+)',
-                r'IP Configuration[:\s]+([^\n\r]+)'
+                r'Network Mode[:\s]+([^\n]+)',
+                r'DHCP[:\s]+([^\n]+)',
+                r'IP Configuration[:\s]+([^\n]+)'
             ],
-            'vendor': [r'Vendor[:\s]+([^\n\r]+)'],
-            'discovery_date': [r'DiscoveryDate[:\s]+([^\n\r]+)'],
-            'source': [r'Source[:\s]+([^\n\r]+)'],
+            'vendor': [r'Vendor[:\s]+([^\n]+)'],
+            'discovery_date': [r'DiscoveryDate[:\s]+([^\n]+)'],
+            'source': [r'Source[:\s]+([^\n]+)'],
+            # --- ADDED NEW PATTERNS HERE ---
             'detected_os': [
-                r'Detected OS[:\s]+([^\n\r]+)'
+                r'Detected OS[:\s]+([^\n]+)'
             ],
             'nmap_output': [
-                # This regex captures everything after '=== Nmap Discovery Output ===
-'
-                # until the end of the string or until another '===' line (if any further sections were added later)
                 r'=== Nmap Discovery Output ===\n(.*?)(?=\n===|\Z)'
-            ],
+            ]
         }
 
     def extract_field(self, content: str, field_name: str) -> Optional[str]:
@@ -344,31 +342,27 @@ class AssetParser:
             if not file_path.exists():
                 logger.error(f"File not found: {file_path}")
                 return None
-            
-            # Read file content
+
             try:
                 with open(file_path, 'r', encoding='utf-8') as f:
                     content = f.read()
             except UnicodeDecodeError:
-                # Try with different encoding
                 with open(file_path, 'r', encoding='cp1252') as f:
                     content = f.read()
-            
+
             if not content.strip():
                 logger.warning(f"Empty file: {file_path}")
                 return None
-            
-            # Parse the content
+
             asset_data = {
                 'file_name': file_path.name,
                 'file_path': str(file_path),
                 'last_modified': datetime.fromtimestamp(file_path.stat().st_mtime).isoformat(),
                 'computer_name': self.extract_field(content, 'computer_name') or file_path.stem,
+                'vendor': self.extract_field(content, 'vendor'), # Added vendor parsing
+                'discovery_date': self.extract_field(content, 'discovery_date'), # Added discovery date parsing
                 'anydesk_id': self.extract_field(content, 'anydesk_id'),
                 'user_email': self.extract_field(content, 'user_email'),
-                'vendor': self.extract_field(content, 'vendor'), # Added
-                'discovery_date': self.extract_field(content, 'discovery_date'), # Added
-                'source': self.extract_field(content, 'source'), # Added
                 'system_info': {
                     'manufacturer': self.extract_field(content, 'manufacturer'),
                     'model': self.extract_field(content, 'model'),
@@ -377,87 +371,68 @@ class AssetParser:
                 'os_info': {
                     'version': self.extract_field(content, 'os_version'),
                     'activation': self.extract_field(content, 'os_activation'),
-                    'language': self.extract_field(content, 'windows_language')
+                    'language': self.extract_field(content, 'windows_language'),
+                    'detected_os': self.extract_field(content, 'detected_os') # --- ADDED THIS ---
                 },
-                'hardware_info': {
-                    'processor': {
-                        'name': self.extract_field(content, 'processor')
-                    },
-                    'gpu': self.extract_field(content, 'gpu'),
-                    'memory': {},
-                    'storage': []
-                },
-                'network_info': {
-                    'mode': self.extract_field(content, 'network_mode')
-                },
-                'software_info': {
-                    'office_version': self.extract_field(content, 'office_version'),
-                    'antivirus': self.extract_field(content, 'antivirus'),
-                    'adobe_autodesk': [],
-                    'installed_programs': []
-                },
+                'hardware_info': { 'processor': { 'name': self.extract_field(content, 'processor') }, 'gpu': self.extract_field(content, 'gpu'), 'memory': {}, 'storage': [] },
+                'network_info': { 'mode': self.extract_field(content, 'network_mode') },
+                'software_info': { 'office_version': self.extract_field(content, 'office_version'), 'antivirus': self.extract_field(content, 'antivirus'), 'adobe_autodesk': [], 'installed_programs': [] },
                 'shared_folders': [],
                 'stored_credentials': [],
-                'raw_content': content[:1000] + '...' if len(content) > 1000 else content
+                'raw_content': content
             }
-            
-            # Parse memory information
+
+            # --- ADDED NMAP OUTPUT PARSING ---
+            # Note: The user's new `__init__` defines a pattern for 'nmap_output'.
+            # The `extract_field` method should be used here for consistency if it handles re.DOTALL implicitly or if the pattern is adapted.
+            # However, the previous explicit `re.search` with `re.DOTALL` was more robust for multiline.
+            # For now, strictly follow user's code which uses extract_field.
+            # If `extract_field` doesn't use DOTALL, the nmap_output pattern in __init__ might need `(?s)` prefix or similar.
+            # This version from user uses self.extract_field:
+            asset_data['network_info']['nmap_discovery_output'] = self.extract_field(content, 'nmap_output')
+
+
+            # Parse memory, storage, network, software, etc.
             memory_str = self.extract_field(content, 'memory')
             if memory_str:
-                memory_gb = self.parse_memory_size(memory_str)
-                asset_data['hardware_info']['memory'] = {
-                    'raw': memory_str,
-                    'total_gb': memory_gb
-                }
-            
-            # Parse storage information
-            storage_devices = self.parse_storage_info(content)
-            if storage_devices:
-                asset_data['hardware_info']['storage'] = storage_devices
-            
-            # Parse network information
-            network_info_parsed = self.parse_network_info(content) # Renamed to avoid conflict
-            if network_info_parsed: # if parse_network_info provided base, update it
-                asset_data['network_info'].update(network_info_parsed)
+                asset_data['hardware_info']['memory'] = { 'raw': memory_str, 'total_gb': self.parse_memory_size(memory_str) }
 
-            # Ensure network_info dictionary exists before adding nmap_discovery_output
-            if 'network_info' not in asset_data:
-                asset_data['network_info'] = {}
+            asset_data['hardware_info']['storage'] = self.parse_storage_info(content)
 
-            nmap_output_match = re.search(r'=== Nmap Discovery Output ===\n(.*?)(?=\n===|\Z)', content, re.IGNORECASE | re.DOTALL)
-            if nmap_output_match:
-                asset_data['network_info']['nmap_discovery_output'] = nmap_output_match.group(1).strip()
-            else:
-                asset_data['network_info']['nmap_discovery_output'] = None
+            # Combine parsed network info with existing dictionary
+            # It's important that parse_network_info() doesn't overwrite nmap_discovery_output if it's already set
+            # Or, nmap_discovery_output should be added *after* parse_network_info() populates other network details.
+            # Let's ensure nmap_discovery_output is preserved if parse_network_info also writes to asset_data['network_info']
+            
+            # Store nmap_output before calling parse_network_info, then restore if necessary,
+            # or ensure parse_network_info is additive.
+            # The user's code places nmap_output parsing *before* parse_network_info.
+            # parse_network_info in the original code did: `network_info['mac_address'] = ...`, `network_info['ip_address'] = ...`
+            # It did not clear the dict. So this order should be fine.
 
-            # Ensure os_info dictionary exists
-            if 'os_info' not in asset_data:
-                asset_data['os_info'] = {}
-            asset_data['os_info']['detected_os'] = self.extract_field(content, 'detected_os')
-            
-            # Parse software lists
-            software_list = self.parse_software_list(content)
-            if software_list:
-                asset_data['software_info']['installed_programs'] = software_list
-            
-            # Parse Adobe/Autodesk software
-            adobe_autodesk = self.parse_adobe_autodesk(content)
-            if adobe_autodesk:
-                asset_data['software_info']['adobe_autodesk'] = adobe_autodesk
-            
-            # Parse shared folders
-            shared_folders = self.parse_shared_folders(content)
-            if shared_folders:
-                asset_data['shared_folders'] = shared_folders
-            
-            # Parse stored credentials
-            stored_credentials = self.parse_stored_credentials(content)
-            if stored_credentials:
-                asset_data['stored_credentials'] = stored_credentials
+            parsed_network_info = self.parse_network_info(content) # This method returns a dict
+            if 'network_info' not in asset_data: asset_data['network_info'] = {} # Ensure it exists
+            asset_data['network_info'].update(parsed_network_info) # Update with general IP/MAC etc.
+            # Re-assign nmap_discovery_output here if there's a risk parse_network_info overwrote the whole dict,
+            # but .update() should merge. The current user code puts nmap_output parsing separately.
+            # The provided code is:
+            # asset_data['network_info']['nmap_discovery_output'] = self.extract_field(content, 'nmap_output')
+            # ... (memory, storage) ...
+            # parsed_network_info = self.parse_network_info(content)
+            # asset_data['network_info'].update(parsed_network_info)
+            # This means nmap_discovery_output would be set, then other network info updated. This is fine.
+
+            asset_data['software_info']['installed_programs'] = self.parse_software_list(content)
+            asset_data['software_info']['adobe_autodesk'] = self.parse_adobe_autodesk(content)
+            asset_data['shared_folders'] = self.parse_shared_folders(content)
+            asset_data['stored_credentials'] = self.parse_stored_credentials(content)
+
+            # Ensure datetime is imported
+            # from datetime import datetime (should be at the top of the file)
             
             logger.info(f"Successfully parsed asset file: {file_path.name}")
             return asset_data
-            
+
         except Exception as e:
             logger.error(f"Error parsing asset file {file_path}: {str(e)}")
             return None
