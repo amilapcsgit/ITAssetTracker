@@ -984,11 +984,12 @@ class ITAssetDashboard:
 
     def render_asset_bubbles(self, assets):
         """Render asset bubbles in a grid layout"""
-        if not assets:
-            st.warning("No assets match the current filters.")
-            return
+        # The "no assets" message is now handled in the run() method before calling this.
+        # if not assets:
+        #     st.warning("No detailed assets match the current filters.") # Specific message
+        #     return
 
-        st.subheader("Assets Overview")
+        # st.subheader("Assets Overview") # Subheader is now handled in run()
         
         # Create grid layout (5 columns)
         assets_list = list(assets.items())
@@ -1866,10 +1867,21 @@ class ITAssetDashboard:
             # Determine which collection of assets to filter and display
             assets_for_main_view = {}
             if st.session_state.show_discovered_only_filter:
-                # If "Show Only Auto-Discovered Assets" is checked, filter that collection
-                assets_for_main_view = self.filter_assets(current_filters_for_logic, st.session_state.discovered_assets_collection)
+                # When showing only discovered assets, use minimal filters, primarily search term
+                minimal_filters_for_discovered = current_filters_for_logic.copy()
+                minimal_filters_for_discovered['selected_os'] = []
+                minimal_filters_for_discovered['selected_manufacturers'] = []
+                minimal_filters_for_discovered['min_ram'] = 0
+                minimal_filters_for_discovered['max_ram'] = 9999
+                minimal_filters_for_discovered['min_storage'] = 0.0
+                minimal_filters_for_discovered['max_storage'] = 99999.0
+                minimal_filters_for_discovered['show_low_storage'] = False
+                minimal_filters_for_discovered['anydesk_search'] = ""
+                # 'search_term' and 'show_discovered_only' (which is True) are preserved from current_filters_for_logic
+
+                assets_for_main_view = self.filter_assets(minimal_filters_for_discovered, st.session_state.discovered_assets_collection)
             else:
-                # Otherwise, filter the detailed assets collection
+                # Otherwise, filter the detailed assets collection using all sidebar filters
                 assets_for_main_view = self.filter_assets(current_filters_for_logic, st.session_state.detailed_assets_data)
 
 
@@ -1879,38 +1891,52 @@ class ITAssetDashboard:
             # --- Summary Metrics and Charts Section (Conditional) ---
             if st.session_state.get('show_summary_section', True):
                 st.markdown('<div class="summary-charts-container">', unsafe_allow_html=True)
-                # Metrics should reflect the currently viewed filtered set (either detailed or discovered)
                 self.render_overview_metrics(assets_for_main_view)
                 st.divider()
-                self.render_system_statistics(assets_for_main_view) # Similarly, charts for the current view
-                self.render_status_distribution_chart(assets_for_main_view) # And status chart
+                self.render_system_statistics(assets_for_main_view)
+                self.render_status_distribution_chart(assets_for_main_view)
                 st.markdown('</div>', unsafe_allow_html=True)
                 st.divider()
 
-            # Render main content - Asset Bubbles and Details Table (Conditional)
+            # Conditional Rendering for Bubbles and Table
+            bubbles_rendered_or_message_shown = False
             if st.session_state.get('show_bubbles_section', True):
                 if st.session_state.show_discovered_only_filter:
                     st.subheader("Discovered Assets Overview")
-                    self.render_discovered_asset_bubbles(assets_for_main_view) # assets_for_main_view here IS the discovered assets
-                else:
-                    st.subheader("Assets Overview") # Existing subheader
-                    self.render_asset_bubbles(assets_for_main_view) # assets_for_main_view here IS the detailed assets
+                    if not assets_for_main_view:
+                        st.info("No discovered assets match the current search term, or no assets have been discovered yet.")
+                        bubbles_rendered_or_message_shown = True
+                    else:
+                        self.render_discovered_asset_bubbles(assets_for_main_view)
+                        bubbles_rendered_or_message_shown = True
+                else: # Detailed assets view
+                    st.subheader("Assets Overview")
+                    if not assets_for_main_view:
+                        # This message will show if detailed assets are empty after filtering
+                        # but before the global "welcome" or "no assets at all" message.
+                        st.warning("No detailed assets match the current filter criteria.")
+                        bubbles_rendered_or_message_shown = True
+                    else:
+                        self.render_asset_bubbles(assets_for_main_view)
+                        bubbles_rendered_or_message_shown = True
 
-                # Divider only if table is also shown
-                if st.session_state.get('show_details_table_section', True) and assets_for_main_view:
+                if assets_for_main_view and st.session_state.get('show_details_table_section', True): # Only add divider if bubbles were shown and table will be shown
                     st.divider()
 
-            # Details Table Section (operates on the same filtered set as bubbles)
             if st.session_state.get('show_details_table_section', True):
-                # No separate subheader for table needed if it follows bubbles for the same data type
+                # The table rendering function also has its own "no assets to display" if assets_for_main_view is empty
                 self.render_asset_details(assets_for_main_view)
+                # If bubbles were not shown but table is, and table is empty, render_asset_details shows a warning.
+                # If bubbles were shown (even if empty message was printed for bubbles), and table is also empty,
+                # render_asset_details will print its own warning. This might be slightly redundant but acceptable.
+                # If bubbles were NOT shown, and table is empty, this is the first "no data" message.
+                if not assets_for_main_view and not bubbles_rendered_or_message_shown : # if bubbles section was hidden and table is also empty
+                     st.warning("No assets to display in the table for the current filters.")
 
-            # Handle message for no assets matching filters
-            if not assets_for_main_view:
-                if st.session_state.show_discovered_only_filter:
-                    st.info("No auto-discovered assets match the current filters, or no assets have been discovered yet.")
-                elif st.session_state.assets_data: # Check if any assets were loaded at all
-                    st.warning("No detailed assets match the current filter criteria. Try adjusting your filters or view auto-discovered assets.")
+
+            # Fallback "Welcome" or "No assets loaded at all" message
+            # This should only appear if no specific "empty view" message has been shown yet by bubbles or table sections.
+            if not st.session_state.assets_data: # Check if any assets were loaded at all, ever.
                 else:
                     st.info("""
                     **Welcome to the IT Asset Management Dashboard!**
@@ -1936,11 +1962,10 @@ class ITAssetDashboard:
 
     def render_discovered_asset_bubbles(self, discovered_assets: Dict[str, Any]):
         """Render a simpler view for discovered assets."""
-        if not discovered_assets:
-            st.info("No discovered assets to display or match the current filters.")
-            return
-
-        # st.subheader("Discovered Assets Overview") # Subheader moved to run()
+        # The "no assets" message is now handled in the run() method before calling this.
+        # if not discovered_assets:
+        #     st.info("No discovered assets to display or match the current filters.")
+        #     return
 
         assets_list = list(discovered_assets.items())
         cols_per_row = 5 # Or choose a different layout if desired
