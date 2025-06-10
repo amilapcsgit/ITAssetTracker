@@ -2031,6 +2031,7 @@ class ITAssetDashboard:
                         </div>
                     </div>
                     """
+                    # Ensure this is the exact call used for rendering.
                     st.markdown(bubble_html, unsafe_allow_html=True)
 
 
