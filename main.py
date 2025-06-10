@@ -11,7 +11,7 @@ import os
 import subprocess
 import re
 import requests # For MAC vendor lookup
-from typing import Optional # For type hinting
+from typing import Dict, List, Optional, Any, Tuple # Ensured all are present
 
 from asset_parser import AssetParser
 from dashboard_components import DashboardComponents
