@@ -390,6 +390,9 @@ class ITAssetDashboard:
             elif scan_type == "Full Scan":
                 command = [nmap_executable_path, "-T4", "-A", "-v", "-Pn", ip_address]
                 logger.info(f"Executing Nmap Full Scan for {ip_address}: {' '.join(command)}")
+            elif scan_type == "Discovery Detail Scan":
+                command = [nmap_executable_path, "-sV", "-O", "-T4", "-Pn", ip_address]
+                logger.info(f"Executing Nmap Discovery Detail Scan for {ip_address}: {' '.join(command)}")
             elif scan_type == "MAC Scan":
                 command = [nmap_executable_path, "-sn", "-PR", "-T4", ip_address]
                 logger.info(f"Executing Nmap MAC Scan for {ip_address}: {' '.join(command)}")
@@ -428,8 +431,8 @@ class ITAssetDashboard:
 
                 logger.info(f"Nmap {scan_type} for {ip_address}: Parsed status: {result['status']}.")
 
-                # MAC address parsing for Full Scan and MAC Scan
-                if scan_type == "Full Scan" or scan_type == "MAC Scan":
+                # MAC address parsing for Full Scan, MAC Scan, and Discovery Detail Scan
+                if scan_type == "Full Scan" or scan_type == "MAC Scan" or scan_type == "Discovery Detail Scan":
                     mac_match = re.search(r"MAC Address: ([0-9A-Fa-f:]{17})", process.stdout, re.IGNORECASE)
                     if mac_match:
                         result["mac_address"] = mac_match.group(1).upper()
@@ -443,10 +446,12 @@ class ITAssetDashboard:
                         elif scan_type == "MAC Scan" and result["status"] == "online": # If MAC scan says online but no MAC, explicitly log
                             logger.info(f"Nmap MAC Scan for {ip_address}: Host is online, but MAC Address not found in output.")
                         elif scan_type == "Full Scan": # Only log MAC not found for Full Scan if it was expected
-                            logger.info(f"Nmap Full Scan for {ip_address}: MAC Address not found in output.")
+                            logger.info(f"Nmap {scan_type} for {ip_address}: MAC Address not found in output.")
 
-                # OS Detection parsing for OS Scan (and potentially Full Scan if -A provides it)
-                if scan_type == "OS Scan" or (scan_type == "Full Scan" and "-A" in command): # Full scan with -A also does OS detection
+                # OS Detection parsing for OS Scan, Full Scan (if -A provides it), and Discovery Detail Scan
+                if scan_type == "OS Scan" or \
+                   (scan_type == "Full Scan" and "-A" in command) or \
+                   scan_type == "Discovery Detail Scan":
                     result["detected_os_type"] = "Unknown" # Default
                     # Simple keyword-based OS parsing
                     if re.search(r"Running: Microsoft Windows", process.stdout, re.IGNORECASE) or \
@@ -1158,20 +1163,22 @@ class ITAssetDashboard:
 
 
     def render_asset_details_modal(self, assets):
-        """Render asset details in a modal-like container"""
+        """Render asset details in a modal, with a custom view for discovered assets."""
         if not st.session_state.show_asset_details or not st.session_state.selected_asset_for_details:
             return
-        
+
         selected_asset_name = st.session_state.selected_asset_for_details
         if selected_asset_name not in assets:
+            # Asset might not be in the current filtered view, handle gracefully
             st.session_state.show_asset_details = False
             st.session_state.selected_asset_for_details = None
             st.rerun()
             return
-        
+
         asset = assets[selected_asset_name]
-        
-        # Modal header with close button
+        is_discovered = asset.get('file_name', '').startswith('DISCOVERED_')
+
+        # --- Modal Header (common for both views) ---
         col1, col2 = st.columns([4, 1])
         with col1:
             st.subheader(f"Asset Details: {selected_asset_name}")
@@ -1180,36 +1187,56 @@ class ITAssetDashboard:
                 st.session_state.show_asset_details = False
                 st.session_state.selected_asset_for_details = None
                 st.rerun()
-        
-        # Asset details in tabs
-        tab1, tab2, tab3, tab4, tab5 = st.tabs(["System Info", "Hardware", "Software", "Network", "Raw Data"])
-        
-        with tab1:
-            self.dashboard_components.render_system_info(asset)
-        
-        with tab2:
-            self.dashboard_components.render_hardware_info(asset)
-        
-        with tab3:
-            self.dashboard_components.render_software_info(asset)
-        
-        with tab4:
-            self.dashboard_components.render_network_info(asset)
+
+        # --- Conditional View Rendering ---
+        if is_discovered:
+            # Render a simple, custom view for discovered assets
+            st.markdown("---")
+            st.info("This is a discovered asset with limited information.")
+
+            st.write(f"**IP Address:** {asset.get('network_info', {}).get('ip_address', 'N/A')}")
+            st.write(f"**MAC Address:** {asset.get('network_info', {}).get('mac_address', 'N/A')}")
+            # Ensure this key matches what AssetParser provides for OS from file
+            st.write(f"**Detected OS:** {asset.get('os_info', {}).get('detected_os', 'N/A')}")
+            st.write(f"**Vendor:** {asset.get('vendor', 'N/A')}")
             
-            # AnyDesk connection section
-            anydesk_id = asset.get('anydesk_id', '')
-            if anydesk_id:
-                st.markdown("---")
-                st.subheader("Remote Access")
-                col1, col2 = st.columns([2, 1])
-                with col1:
-                    st.write(f"**AnyDesk ID:** {anydesk_id}")
-                with col2:
+            # Format discovery_date if it exists
+            discovery_date_str = asset.get('discovery_date', 'N/A')
+            discovery_date_formatted = discovery_date_str
+            if discovery_date_str and discovery_date_str != 'N/A':
+                try:
+                    # Ensure datetime is imported: from datetime import datetime
+                    discovery_date_dt = datetime.fromisoformat(discovery_date_str)
+                    discovery_date_formatted = discovery_date_dt.strftime("%Y-%m-%d %H:%M:%S")
+                except ValueError:
+                    discovery_date_formatted = discovery_date_str # Keep original if parsing fails
+            st.write(f"**First Discovered:** {discovery_date_formatted}")
+
+            # Ensure this key matches what AssetParser provides for Nmap output
+            raw_nmap_output = asset.get('network_info', {}).get('nmap_discovery_output', 'No Nmap output available.')
+            with st.expander("Show Raw Nmap Discovery Output"):
+                st.code(raw_nmap_output, language='bash')
+
+        else:
+            # Render the original, full-featured tabbed view for detailed assets
+            tab1, tab2, tab3, tab4, tab5 = st.tabs(["System Info", "Hardware", "Software", "Network", "Raw Data"])
+            with tab1:
+                self.dashboard_components.render_system_info(asset)
+            with tab2:
+                self.dashboard_components.render_hardware_info(asset)
+            with tab3:
+                self.dashboard_components.render_software_info(asset)
+            with tab4:
+                self.dashboard_components.render_network_info(asset)
+                # AnyDesk connection section
+                anydesk_id = asset.get('anydesk_id', '')
+                if anydesk_id:
+                    st.markdown("---")
+                    st.subheader("Remote Access")
                     anydesk_url = f"anydesk:{anydesk_id}"
                     st.markdown(f'<a href="{anydesk_url}" target="_blank" style="background-color: #0078d4; color: white; padding: 8px 16px; border-radius: 4px; text-decoration: none; display: inline-block;">🖥️ Connect via AnyDesk</a>', unsafe_allow_html=True)
-        
-        with tab5:
-            self.dashboard_components.render_raw_data_viewer(asset)
+            with tab5:
+                self.dashboard_components.render_raw_data_viewer(asset)
 
     def render_overview_metrics(self, assets):
         """Render overview metrics cards"""
@@ -1471,16 +1498,19 @@ class ITAssetDashboard:
 
         # 2. For each live IP, get MAC and update/log asset
         for ip_address in live_ips:
-            logger.info(f"Processing live IP: {ip_address}")
-            mac_scan_result = self._run_nmap_scan(ip_address, nmap_executable_path, "MAC Scan")
+            logger.info(f"Processing live IP for detailed discovery: {ip_address}")
+            scan_result = self._run_nmap_scan(ip_address, nmap_executable_path, "Discovery Detail Scan")
 
-            discovered_mac = mac_scan_result.get("mac_address")
+            discovered_mac = scan_result.get("mac_address")
+            detected_os = scan_result.get("detected_os_type", "Unknown")
+            nmap_raw_output = scan_result.get("nmap_output", "")
+            hostname_from_scan = scan_result.get("hostname") # This relies on _run_nmap_scan's ReverseDNS part or similar being triggered by "Discovery Detail Scan"
+
             asset_found_by_mac = False
-            # asset_found_by_ip = False # Not strictly needed here as MAC takes precedence for file creation
             data_changed_by_discovery_this_iteration = False
 
             if discovered_mac:
-                logger.info(f"Discovery: IP {ip_address} has MAC {discovered_mac}")
+                logger.info(f"Discovery: IP {ip_address} has MAC {discovered_mac}, OS: {detected_os}, Hostname: {hostname_from_scan}")
                 # Check if this MAC already exists
                 for asset_name, asset_data_existing in st.session_state.assets_data.items():
                     if asset_data_existing.get('network_info', {}).get('mac_address', '').upper() == discovered_mac:
@@ -1490,9 +1520,17 @@ class ITAssetDashboard:
 
                         # Update internal data
                         asset_data_existing['network_info']['ip_address'] = ip_address
-                        asset_data_existing['network_info']['status'] = 'online'
+                        asset_data_existing['network_info']['status'] = 'online' # From scan_result status
                         asset_data_existing['network_info']['nmap_scan_status'] = 'completed'
                         asset_data_existing['network_info']['last_seen_via_discovery'] = datetime.now().isoformat()
+                        if detected_os != "Unknown":
+                            asset_data_existing.setdefault('os_info', {})['detected_os_type'] = detected_os
+                        # Optionally update hostname if different and useful
+                        if hostname_from_scan and hostname_from_scan != ip_address and asset_data_existing.get('computer_name') != hostname_from_scan:
+                            logger.info(f"Updating computer name for {asset_name} to {hostname_from_scan} based on scan.")
+                            # This is a potentially significant change; consider if asset_name (dict key) should also change.
+                            # For now, just updating the 'computer_name' field within the asset data.
+                            asset_data_existing['computer_name'] = hostname_from_scan
                         data_changed_by_discovery_this_iteration = True
 
                         # Update the asset's .txt file
@@ -1535,35 +1573,29 @@ class ITAssetDashboard:
                             logger.warning(f"Discovery: File path not found for existing asset {asset_name}. Cannot update file.")
                         break # Found and processed this MAC
 
-                if not asset_found_by_mac:
+                if not asset_found_by_mac and discovered_mac: # Only create new if MAC exists and not found
                     computer_name_to_use = None
-                    # Attempt rDNS Lookup first
-                    logger.info(f"Discovery: Attempting rDNS lookup for new MAC {discovered_mac} at IP {ip_address}")
-                    rdns_result = self._run_nmap_scan(ip_address, nmap_executable_path, "ReverseDNS Scan")
-                    if rdns_result and rdns_result.get("hostname"):
-                        # Ensure hostname is not just the IP address itself
-                        if rdns_result["hostname"] != ip_address:
-                            computer_name_to_use = rdns_result["hostname"]
-                            logger.info(f"Discovery: Using hostname from rDNS: {computer_name_to_use}")
+                    vendor = self.get_mac_vendor_details(discovered_mac) or 'N/A' # Moved vendor call here
 
-                    # Fetch vendor details (needed for Vendor field anyway, and for naming if rDNS fails)
-                    vendor = self.get_mac_vendor_details(discovered_mac) or 'N/A'
-
-                    if not computer_name_to_use: # If rDNS failed or returned IP
-                        if vendor != 'N/A' and vendor != "Unknown Vendor" and vendor != "Unknown Vendor (No vendor field)" and vendor != "Unknown Vendor (JSON Decode Error)" and vendor != "Unknown Vendor (Invalid MAC format for API)":
+                    if hostname_from_scan and hostname_from_scan != ip_address:
+                        computer_name_to_use = hostname_from_scan
+                        logger.info(f"Discovery: Using hostname from Discovery Detail Scan: {computer_name_to_use}")
+                    else:
+                        # Fallback to existing vendor/MAC based naming if hostname not found or is IP
+                        if vendor and vendor != 'N/A' and not vendor.lower().startswith("unknown vendor"):
                             computer_name_to_use = f"{vendor} device ({ip_address})"
                             logger.info(f"Discovery: Using vendor-based name: {computer_name_to_use}")
-                        else:
+                        else: # Default to MAC-based name if vendor is not useful
                             computer_name_to_use = f"DISCOVERED_ASSET_{discovered_mac.replace(':', '')}"
                             logger.info(f"Discovery: Using MAC-based fallback name: {computer_name_to_use}")
 
-                    # Final fallback if all else fails (should be rare)
-                    if not computer_name_to_use:
-                        computer_name_to_use = f"UNKNOWN_DEVICE_{discovered_mac.replace(':', '')}"
+                    # Ensure computer_name_to_use is not None if we reach here with a MAC
+                    if not computer_name_to_use: # Should be redundant given the logic above if discovered_mac is True
+                         computer_name_to_use = f"DISCOVERED_ASSET_{discovered_mac.replace(':', '')}"
+
 
                     logger.info(f"Discovery: Final chosen name for new asset: {computer_name_to_use} (IP: {ip_address}, MAC: {discovered_mac})")
-
-                    new_asset_filename = f"DISCOVERED_{discovered_mac.replace(':', '')}.txt" # Filename still MAC-based for uniqueness
+                    new_asset_filename = f"DISCOVERED_{discovered_mac.replace(':', '')}.txt"
                     new_asset_filepath = self.assets_folder / new_asset_filename
 
                     file_content = (
@@ -1571,39 +1603,37 @@ class ITAssetDashboard:
                         f"IP Address: {ip_address}\n"
                         f"MAC Address: {discovered_mac}\n"
                         f"Vendor: {vendor}\n"
-                        f"Status: online\n" # Default status for newly discovered
+                        f"Detected OS: {detected_os}\n"
+                        f"Status: online\n"
                         f"DiscoveryDate: {datetime.now().isoformat()}\n"
                         f"Source: Network Discovery\n"
+                        f"=== Nmap Discovery Output ===\n"
+                        f"{nmap_raw_output}\n"
                     )
                     try:
                         with open(new_asset_filepath, 'w', encoding='utf-8') as f:
                             f.write(file_content)
-                        logger.info(f"Discovery: Created new asset file: {new_asset_filepath} with Computer Name: {computer_name_to_use}")
+                        logger.info(f"Discovery: Created new asset file: {new_asset_filepath}")
                         data_changed_by_discovery_this_iteration = True
                     except IOError as e:
                         logger.error(f"Discovery: Failed to write new asset file {new_asset_filepath}: {e}")
 
-            # If no MAC, but IP is live - try to update existing asset by IP (but don't create new file)
-            elif mac_scan_result.get("status") == "online": # MAC not found, but host is up
-                logger.info(f"Discovery: MAC address not found for live IP {ip_address}. Will try to match by IP for existing assets.")
+            elif not discovered_mac and scan_result.get("status") == "online": # No MAC, but host is up
+                logger.info(f"Discovery: Host {ip_address} is online but MAC address not found by Discovery Detail Scan. Attempting to update by IP if known.")
+                # Try to update existing asset by IP if MAC was not found by the detailed scan
                 for asset_name, asset_data_existing in st.session_state.assets_data.items():
                     if asset_data_existing.get('network_info', {}).get('ip_address') == ip_address:
-                        # Only update status if it's not already reflecting a recent scan by other means
-                        # This avoids overwriting a detailed 'online' from full scan with a simple 'online' from discovery
-                        if asset_data_existing['network_info'].get('status') != 'online' or \
-                           asset_data_existing['network_info'].get('nmap_scan_status') not in ['completed', 'scanning']:
-                            logger.info(f"Discovery: Known asset '{asset_name}' found by IP {ip_address} (MAC not identified in this scan). Updating status.")
-                            asset_data_existing['network_info']['status'] = 'online'
-                            # Do not change nmap_scan_status here to 'completed' unless we are sure this is the primary source of truth now.
-                            # Keep it as is, or set to something like 'verified_online_by_discovery' if a new state is desired.
-                            # For now, just update 'status' and 'last_seen_via_discovery'.
-                            asset_data_existing['network_info']['last_seen_via_discovery'] = datetime.now().isoformat()
-                            data_changed_by_discovery_this_iteration = True
-                            # Note: We are not updating the IP address line in the file here,
-                            # as this block is for when MAC is primary identifier and wasn't found.
-                            # Updating IP in file is handled in the MAC-found block.
-                        break # Found by IP
-                # No 'else' here to create new file, as per requirement (new files created only if MAC is found)
+                        logger.info(f"Discovery: Known asset '{asset_name}' found by IP {ip_address} (MAC not identified in this scan). Updating status and OS if available.")
+                        asset_data_existing['network_info']['status'] = 'online'
+                        if detected_os != "Unknown":
+                             asset_data_existing.setdefault('os_info', {})['detected_os_type'] = detected_os
+                        asset_data_existing['network_info']['last_seen_via_discovery'] = datetime.now().isoformat()
+                        # Potentially update nmap_scan_output in the .txt file as well
+                        data_changed_by_discovery_this_iteration = True
+                        break
+                # If no MAC, we don't create a new file as per previous logic (filename based on MAC)
+                # We could create a file based on IP if desired, e.g., DISCOVERED_IP_{ip_address}.txt
+                # For now, align with previous behavior: new files need a MAC.
 
             if data_changed_by_discovery_this_iteration:
                 self.data_changed_by_discovery = True # Set the class/instance level flag
@@ -1987,7 +2017,7 @@ class ITAssetDashboard:
                         except ValueError:
                             discovery_date_display = discovery_date_str
 
-                    detected_os_type = asset.get('os_info', {}).get('detected_os_type')
+                    detected_os_type = asset.get('os_info', {}).get('detected_os')
                     os_icon_html = ""
                     if detected_os_type:
                         icon_char = "❓"

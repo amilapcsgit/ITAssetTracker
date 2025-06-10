@@ -91,6 +91,15 @@ class AssetParser:
             'vendor': [r'Vendor[:\s]+([^\n\r]+)'],
             'discovery_date': [r'DiscoveryDate[:\s]+([^\n\r]+)'],
             'source': [r'Source[:\s]+([^\n\r]+)'],
+            'detected_os': [
+                r'Detected OS[:\s]+([^\n\r]+)'
+            ],
+            'nmap_output': [
+                # This regex captures everything after '=== Nmap Discovery Output ===
+'
+                # until the end of the string or until another '===' line (if any further sections were added later)
+                r'=== Nmap Discovery Output ===\n(.*?)(?=\n===|\Z)'
+            ],
         }
 
     def extract_field(self, content: str, field_name: str) -> Optional[str]:
@@ -407,9 +416,24 @@ class AssetParser:
                 asset_data['hardware_info']['storage'] = storage_devices
             
             # Parse network information
-            network_info = self.parse_network_info(content)
-            if network_info:
-                asset_data['network_info'] = network_info
+            network_info_parsed = self.parse_network_info(content) # Renamed to avoid conflict
+            if network_info_parsed: # if parse_network_info provided base, update it
+                asset_data['network_info'].update(network_info_parsed)
+
+            # Ensure network_info dictionary exists before adding nmap_discovery_output
+            if 'network_info' not in asset_data:
+                asset_data['network_info'] = {}
+
+            nmap_output_match = re.search(r'=== Nmap Discovery Output ===\n(.*?)(?=\n===|\Z)', content, re.IGNORECASE | re.DOTALL)
+            if nmap_output_match:
+                asset_data['network_info']['nmap_discovery_output'] = nmap_output_match.group(1).strip()
+            else:
+                asset_data['network_info']['nmap_discovery_output'] = None
+
+            # Ensure os_info dictionary exists
+            if 'os_info' not in asset_data:
+                asset_data['os_info'] = {}
+            asset_data['os_info']['detected_os'] = self.extract_field(content, 'detected_os')
             
             # Parse software lists
             software_list = self.parse_software_list(content)
