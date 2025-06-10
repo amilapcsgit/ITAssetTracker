@@ -12,6 +12,7 @@ import subprocess
 import re
 import requests # For MAC vendor lookup
 from typing import Dict, List, Optional, Any, Tuple # Ensured all are present
+import html # For escaping HTML special characters
 
 from asset_parser import AssetParser
 from dashboard_components import DashboardComponents
@@ -1937,10 +1938,9 @@ class ITAssetDashboard:
             # Fallback "Welcome" or "No assets loaded at all" message
             # This should only appear if no specific "empty view" message has been shown yet by bubbles or table sections.
             if not st.session_state.assets_data: # Check if any assets were loaded at all, ever.
-                else:
-                    st.info("""
-                    **Welcome to the IT Asset Management Dashboard!**
-                    
+                st.info("""
+                **Welcome to the IT Asset Management Dashboard!**
+
                     To get started:
                     1. Place your Windows PC data files (.txt format) in the 'assets' folder.
                     2. Click the 'Refresh Data' button to load the asset information.
@@ -1976,43 +1976,53 @@ class ITAssetDashboard:
 
             for j, (name, asset) in enumerate(row_assets):
                 with cols[j]:
-                    ip_address = asset.get('network_info', {}).get('ip_address', 'N/A')
-                    mac_address = asset.get('network_info', {}).get('mac_address', 'N/A')
-                    vendor = asset.get('vendor', 'N/A') # Assuming AssetParser now provides this
-                    if vendor is None: vendor = 'N/A' # Ensure it's not None for display
-                    discovery_date_str = asset.get('discovery_date', 'N/A')
-                    if discovery_date_str and discovery_date_str != 'N/A':
+                    ip_address_raw = asset.get('network_info', {}).get('ip_address', 'N/A')
+                    mac_address_raw = asset.get('network_info', {}).get('mac_address', 'N/A')
+                    vendor_raw = asset.get('vendor', 'N/A')
+                    if vendor_raw is None: vendor_raw = 'N/A'
+
+                    discovery_date_str_raw = asset.get('discovery_date', 'N/A')
+                    discovery_date_display = "N/A"
+                    if discovery_date_str_raw and discovery_date_str_raw != 'N/A':
                         try:
-                            discovery_date_dt = datetime.fromisoformat(discovery_date_str)
-                            discovery_date_display = discovery_date_dt.strftime("%Y-%m-%d")
+                            discovery_date_dt = datetime.fromisoformat(discovery_date_str_raw)
+                            discovery_date_display = html.escape(discovery_date_dt.strftime("%Y-%m-%d"))
                         except ValueError:
-                            discovery_date_display = discovery_date_str # Display as is if not valid ISO format
-                    else:
-                        discovery_date_display = "N/A"
+                            discovery_date_display = html.escape(discovery_date_str_raw)
+
+                    name_from_asset = name # 'name' is the key from the dictionary, usually computer_name
+                    escaped_name = html.escape(str(name_from_asset))
+                    escaped_ip_address = html.escape(str(ip_address_raw))
+                    escaped_mac_address = html.escape(str(mac_address_raw))
+                    escaped_vendor_full = html.escape(str(vendor_raw))
+                    escaped_vendor_display = (escaped_vendor_full[:20] + '...') if len(escaped_vendor_full) > 23 else escaped_vendor_full
 
 
-                    detected_os_type = asset.get('os_info', {}).get('detected_os_type')
+                    detected_os_type_raw = asset.get('os_info', {}).get('detected_os_type')
                     os_icon_html = ""
-                    if detected_os_type:
+                    if detected_os_type_raw:
                         icon_char = "❓"
-                        if detected_os_type == "Windows": icon_char = "🪟"
-                        elif detected_os_type == "Linux": icon_char = "🐧"
-                        elif detected_os_type == "macOS": icon_char = ""
-                        os_icon_html = f'<span class="os-icon" title="{detected_os_type}" style="opacity: 0.7; font-size: 0.9em; margin-right: 4px;">{icon_char}</span>'
+                        if detected_os_type_raw == "Windows": icon_char = "🪟"
+                        elif detected_os_type_raw == "Linux": icon_char = "🐧"
+                        elif detected_os_type_raw == "macOS": icon_char = ""
+                        # icon_char itself does not need escaping as it's a fixed set of safe unicode.
+                        # Title attribute should be escaped.
+                        escaped_detected_os_type_title = html.escape(str(detected_os_type_raw))
+                        os_icon_html = f'<span class="os-icon" title="{escaped_detected_os_type_title}" style="opacity: 0.7; font-size: 0.9em; margin-right: 4px;">{icon_char}</span>'
 
-                    name_url_encoded = urllib.parse.quote(name)
+                    name_url_encoded = urllib.parse.quote(name_from_asset) # URL encoding for href
 
                     bubble_html = f"""
                     <div class="asset-bubble discovered-asset-bubble">
                         <div class="asset-bubble-content">
                             <div class="asset-header">
                                 {os_icon_html}
-                                <a class="asset-name-link" href="/?view_asset={name_url_encoded}" target="_self">{name}</a>
-                                <div class="asset-ip" style="font-size: 0.9em; opacity: 0.8;">{ip_address}</div>
+                                <a class="asset-name-link" href="/?view_asset={name_url_encoded}" target="_self">{escaped_name}</a>
+                                <div class="asset-ip" style="font-size: 0.9em; opacity: 0.8;">{escaped_ip_address}</div>
                             </div>
                             <div class="asset-details-group" style="font-size: 0.8em;">
-                                <div class="asset-mac">MAC: {mac_address}</div>
-                                <div class="asset-vendor" title="{vendor}">Vendor: { (vendor[:20] + '...') if len(vendor) > 23 else vendor }</div>
+                                <div class="asset-mac">MAC: {escaped_mac_address}</div>
+                                <div class="asset-vendor" title="{escaped_vendor_full}">Vendor: {escaped_vendor_display}</div>
                                 <div class="asset-discovery-date">Seen: {discovery_date_display}</div>
                             </div>
                             <div class="asset-footer-group">
