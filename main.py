@@ -10,6 +10,8 @@ from datetime import datetime
 import os
 import subprocess
 import re
+import requests # For MAC vendor lookup
+from typing import Optional # For type hinting
 
 from asset_parser import AssetParser
 from dashboard_components import DashboardComponents
@@ -327,6 +329,9 @@ class ITAssetDashboard:
         if 'network_discovery_range' not in st.session_state: # For network discovery
             st.session_state.network_discovery_range = "192.168.1.0/24" # Default, adjust as needed
 
+        if 'show_discovered_only_filter' not in st.session_state: # For discovered assets filter
+            st.session_state.show_discovered_only_filter = False
+
         # UI Customization Settings
         if 'show_summary_section' not in st.session_state:
             st.session_state.show_summary_section = True
@@ -352,17 +357,30 @@ class ITAssetDashboard:
             # -v: Verbose
             # -sn: Ping Scan - disable port scan. Used for Quick Scan.
             # -PR: ARP Ping scan
+            # -O: Enable OS detection
+            # --osscan-guess: Guess OS more aggressively
 
             command = []
+            # Mocked OS Scan for a specific IP
+            if scan_type == "OS Scan" and ip_address == "192.168.1.250": # Test IP for OS Scan
+                logger.info(f"Returning MOCKED OS Scan result for test IP {ip_address}")
+                result["status"] = "online"
+                result["detected_os_type"] = "Windows" # Mocked OS type
+                result["nmap_output"] = "Mocked Nmap OS Scan Output for 192.168.1.250\nRunning: Microsoft Windows 10"
+                return result
+
             if scan_type == "Quick Scan":
                 command = [nmap_executable_path, "-sn", "-T4", ip_address]
                 logger.info(f"Executing Nmap Quick Scan for {ip_address}: {' '.join(command)}")
             elif scan_type == "Full Scan":
                 command = [nmap_executable_path, "-T4", "-A", "-v", "-Pn", ip_address]
                 logger.info(f"Executing Nmap Full Scan for {ip_address}: {' '.join(command)}")
-            elif scan_type == "MAC Scan": # New scan type
-                command = [nmap_executable_path, "-sn", "-PR", "-T4", ip_address] # ARP Ping Scan
+            elif scan_type == "MAC Scan":
+                command = [nmap_executable_path, "-sn", "-PR", "-T4", ip_address]
                 logger.info(f"Executing Nmap MAC Scan for {ip_address}: {' '.join(command)}")
+            elif scan_type == "OS Scan":
+                command = [nmap_executable_path, "-O", "--osscan-guess", "-T4", "-Pn", ip_address] # Added -Pn to ensure it scans even if host seems down
+                logger.info(f"Executing Nmap OS Scan for {ip_address}: {' '.join(command)}")
             else:
                 result["status"] = "error"
                 result["error_message"] = f"Invalid scan type: {scan_type}"
@@ -409,6 +427,30 @@ class ITAssetDashboard:
                         elif scan_type == "Full Scan": # Only log MAC not found for Full Scan if it was expected
                             logger.info(f"Nmap Full Scan for {ip_address}: MAC Address not found in output.")
 
+                # OS Detection parsing for OS Scan (and potentially Full Scan if -A provides it)
+                if scan_type == "OS Scan" or (scan_type == "Full Scan" and "-A" in command): # Full scan with -A also does OS detection
+                    result["detected_os_type"] = "Unknown" # Default
+                    # Simple keyword-based OS parsing
+                    if re.search(r"Running: Microsoft Windows", process.stdout, re.IGNORECASE) or \
+                       re.search(r"OS details: Microsoft Windows", process.stdout, re.IGNORECASE) or \
+                       re.search(r"OS CPE: cpe:/o:microsoft:windows", process.stdout, re.IGNORECASE):
+                        result["detected_os_type"] = "Windows"
+                    elif re.search(r"Running: Linux", process.stdout, re.IGNORECASE) or \
+                         re.search(r"OS details: Linux", process.stdout, re.IGNORECASE) or \
+                         re.search(r"OS CPE: cpe:/o:linux:linux_kernel", process.stdout, re.IGNORECASE):
+                        result["detected_os_type"] = "Linux"
+                    elif re.search(r"Running: Apple macOS", process.stdout, re.IGNORECASE) or \
+                         re.search(r"OS details: Apple macOS", process.stdout, re.IGNORECASE) or \
+                         re.search(r"OS CPE: cpe:/o:apple:macos", process.stdout, re.IGNORECASE) or \
+                         re.search(r"Darwin", process.stdout, re.IGNORECASE): # Darwin is often in macOS Nmap results
+                        result["detected_os_type"] = "macOS"
+
+                    if result["detected_os_type"] != "Unknown":
+                        logger.info(f"Nmap {scan_type} for {ip_address}: Detected OS Type: {result['detected_os_type']}")
+                    else:
+                        logger.info(f"Nmap {scan_type} for {ip_address}: OS Type could not be determined from output.")
+
+
                 # For Quick Scan, result["mac_address"] remains None (as it doesn't typically fetch it)
             else:
                 result["status"] = "error"
@@ -453,6 +495,12 @@ class ITAssetDashboard:
                         if 'network_info' not in asset_data:
                             asset_data['network_info'] = {}
 
+                        # Initialize os_info if not present (for detected_os_type)
+                        if 'os_info' not in asset_data:
+                             asset_data['os_info'] = {}
+                        asset_data['os_info'].setdefault('detected_os_type', None)
+
+
                         # Explicitly set status to 'pending scan' at initial loading
                         asset_data['network_info']['status'] = 'pending scan'
 
@@ -480,6 +528,9 @@ class ITAssetDashboard:
                                      asset_data['network_info']['nmap_scan_status'] = 'unknown' # reset if it was pending but not queued
                         else:
                             asset_data['network_info']['nmap_scan_status'] = 'disabled' # Explicitly mark as disabled or no IP
+
+                        asset_data['file_path'] = str(file_path) # Store full file path
+                        asset_data['file_name'] = file_path.name # Store file name
 
                         assets_data[asset_name] = asset_data
                         logger.info(f"Successfully processed {file_path.name} (including nmap if applicable).")
@@ -706,6 +757,17 @@ class ITAssetDashboard:
         )
         # No need for the if show_low_storage != ... block anymore if using on_change
 
+        st.session_state.show_discovered_only_filter = st.sidebar.checkbox(
+            "📡 Show Only Auto-Discovered Assets",
+            value=st.session_state.show_discovered_only_filter,
+            key="show_discovered_only_checkbox",
+            # on_change callback is implicitly handled by Streamlit if we just read from the key,
+            # but explicit on_change=lambda: setattr(...) is also fine and sometimes clearer.
+            # For direct binding, ensure the key is used in the value param.
+            help="Show only assets created via Network Discovery (filename starts with DISCOVERED_)"
+        )
+
+
         # AnyDesk ID filter
         anydesk_search = st.sidebar.text_input(
             "AnyDesk ID",
@@ -787,15 +849,16 @@ class ITAssetDashboard:
 
         return {
             # 'selected_assets': selected_assets, # Removed
-            'selected_os': selected_os,
-            'selected_manufacturers': selected_manufacturers,
+            'selected_os': selected_os, # This is st.session_state.selected_os_filter
+            'selected_manufacturers': selected_manufacturers, # This is st.session_state.selected_manufacturers_filter
             'min_ram': min_ram,
             'max_ram': max_ram,
             'min_storage': min_storage,
-            'max_storage': max_storage,
-            'show_low_storage': show_low_storage,
-            'anydesk_search': anydesk_search,
-            'search_term': search_term,
+                'max_storage': max_storage, # This is st.session_state.storage_range_filter[1]
+                'show_low_storage': show_low_storage, # This is st.session_state.show_low_storage_only
+                'show_discovered_only': st.session_state.show_discovered_only_filter, # Added
+                'anydesk_search': anydesk_search, # This is st.session_state.anydesk_search_filter
+                'search_term': search_term, # This is st.session_state.search_term_filter
             # 'nmap_enabled' is now implicitly handled by nmap_scan_type
             'nmap_scan_type': st.session_state.nmap_scan_type, # This is nmap setting, not a typical data filter pill
             'nmap_path': st.session_state.nmap_path # Same as above
@@ -869,6 +932,11 @@ class ITAssetDashboard:
                 if search_term not in asset_str:
                     continue
             
+            # Show only discovered assets filter
+            if filters['show_discovered_only']:
+                if not asset.get('file_name', '').startswith('DISCOVERED_'):
+                    continue
+
             filtered_assets[name] = asset
         
         return filtered_assets
@@ -901,6 +969,16 @@ class ITAssetDashboard:
         memory_display = f"{int(memory_gb)} GB" if memory_gb else "N/A"
         anydesk_id = asset.get('anydesk_id', '')
         if anydesk_id == "ID": anydesk_id = ""
+
+        detected_os_type = asset.get('os_info', {}).get('detected_os_type')
+        os_icon_html = ""
+        if detected_os_type:
+            icon_char = "❓" # Default unknown
+            if detected_os_type == "Windows": icon_char = "🪟" # Using a window emoji as a placeholder
+            elif detected_os_type == "Linux": icon_char = "🐧"
+            elif detected_os_type == "macOS": icon_char = ""
+            os_icon_html = f'<span class="os-icon" title="{detected_os_type}" style="opacity: 0.7; font-size: 0.9em; margin-right: 4px;">{icon_char}</span>'
+
 
         network_info = asset.get('network_info', {})
         status = network_info.get('status', 'unknown')
@@ -994,7 +1072,7 @@ class ITAssetDashboard:
                     <div class="asset-ip">{ip_address}</div>
                 </div>
                 <div class="asset-details-group">
-                    <div class="asset-os">🖥️ OS: {os_version}</div>
+                    <div class="asset-os">{os_icon_html}🖥️ OS: {os_version}</div>
                     <div class="asset-ram">💾 RAM: {memory_display}</div>
                     <div class="asset-storage">💽 Storage (C:): {c_drive_display}</div>
                     {windows_account_html}
@@ -1351,37 +1429,180 @@ class ITAssetDashboard:
 
             discovered_mac = mac_scan_result.get("mac_address")
             asset_found_by_mac = False
-            asset_found_by_ip = False
+            # asset_found_by_ip = False # Not strictly needed here as MAC takes precedence for file creation
+            data_changed_by_discovery_this_iteration = False
 
             if discovered_mac:
                 logger.info(f"Discovery: IP {ip_address} has MAC {discovered_mac}")
-                for asset_name, asset_data in st.session_state.assets_data.items():
-                    if asset_data.get('network_info', {}).get('mac_address', '').upper() == discovered_mac:
-                        logger.info(f"Discovery: Known asset '{asset_name}' found by MAC {discovered_mac} at new IP {ip_address} (was {asset_data['network_info'].get('ip_address')}). Updating.")
-                        asset_data['network_info']['ip_address'] = ip_address
-                        asset_data['network_info']['status'] = 'online'
-                        asset_data['network_info']['nmap_scan_status'] = 'completed' # Or 'verified_online'
-                        asset_data['network_info']['last_seen_via_discovery'] = datetime.now().isoformat()
+                # Check if this MAC already exists
+                for asset_name, asset_data_existing in st.session_state.assets_data.items():
+                    if asset_data_existing.get('network_info', {}).get('mac_address', '').upper() == discovered_mac:
                         asset_found_by_mac = True
-                        break
+                        logger.info(f"Discovery: MAC {discovered_mac} matches existing asset '{asset_name}'.")
+                        old_ip = asset_data_existing['network_info'].get('ip_address')
+
+                        # Update internal data
+                        asset_data_existing['network_info']['ip_address'] = ip_address
+                        asset_data_existing['network_info']['status'] = 'online'
+                        asset_data_existing['network_info']['nmap_scan_status'] = 'completed'
+                        asset_data_existing['network_info']['last_seen_via_discovery'] = datetime.now().isoformat()
+                        data_changed_by_discovery_this_iteration = True
+
+                        # Update the asset's .txt file
+                        original_file_path_str = asset_data_existing.get('file_path')
+                        if original_file_path_str:
+                            try:
+                                original_file_path = Path(original_file_path_str)
+                                with open(original_file_path, 'r', encoding='utf-8') as f_read:
+                                    content_lines = f_read.readlines()
+
+                                new_content_lines = []
+                                ip_updated_in_file = False
+                                for line in content_lines:
+                                    if line.lower().startswith("ip address:"):
+                                        new_content_lines.append(f"IP Address: {ip_address}\n")
+                                        ip_updated_in_file = True
+                                    else:
+                                        new_content_lines.append(line)
+                                if not ip_updated_in_file:
+                                    new_content_lines.append(f"IP Address: {ip_address}\n")
+
+                                with open(original_file_path, 'w', encoding='utf-8') as f_write:
+                                    f_write.writelines(new_content_lines)
+                                logger.info(f"Discovery: Updated IP in file {original_file_path}")
+
+                                # Conditional File Renaming (if filename was old IP)
+                                if old_ip and old_ip != ip_address and original_file_path.stem == old_ip:
+                                    new_file_name_stem = ip_address
+                                    new_file_path = original_file_path.with_name(f"{new_file_name_stem}{original_file_path.suffix}")
+                                    try:
+                                        os.rename(original_file_path, new_file_path)
+                                        logger.info(f"Discovery: Renamed asset file from {original_file_path.name} to {new_file_path.name}")
+                                        asset_data_existing['file_path'] = str(new_file_path)
+                                        asset_data_existing['file_name'] = new_file_path.name
+                                    except OSError as e_rename:
+                                        logger.error(f"Discovery: Error renaming file {original_file_path} to {new_file_path}: {e_rename}")
+                            except IOError as e_io:
+                                logger.error(f"Discovery: IOError updating file for asset {asset_name}: {e_io}")
+                        else:
+                            logger.warning(f"Discovery: File path not found for existing asset {asset_name}. Cannot update file.")
+                        break # Found and processed this MAC
+
                 if not asset_found_by_mac:
-                    logger.info(f"Discovery: New device found by MAC. IP: {ip_address}, MAC: {discovered_mac}. Consider adding to assets if persistent.")
-                    # Optionally, create a placeholder for new devices here if desired in future
-            else: # No MAC found from MAC Scan
-                logger.info(f"Discovery: MAC address not found for live IP {ip_address}. Will try to match by IP.")
-                for asset_name, asset_data in st.session_state.assets_data.items():
-                    if asset_data.get('network_info', {}).get('ip_address') == ip_address:
-                        logger.info(f"Discovery: Known asset '{asset_name}' found by IP {ip_address} (MAC not identified in this scan). Updating status.")
-                        asset_data['network_info']['status'] = 'online'
-                        asset_data['network_info']['nmap_scan_status'] = 'completed' # Or 'verified_online'
-                        asset_data['network_info']['last_seen_via_discovery'] = datetime.now().isoformat()
-                        asset_found_by_ip = True
-                        break
-                if not asset_found_by_ip:
-                    logger.info(f"Discovery: New live IP {ip_address} found (MAC unknown). Consider investigating or adding to assets if persistent.")
+                    logger.info(f"Discovery: New device found by MAC. IP: {ip_address}, MAC: {discovered_mac}. Creating new asset file.")
+                    vendor = self.get_mac_vendor_details(discovered_mac) or 'N/A'
+                    new_asset_filename = f"DISCOVERED_{discovered_mac.replace(':', '')}.txt"
+                    new_asset_filepath = self.assets_folder / new_asset_filename
+
+                    file_content = (
+                        f"Computer Name: DISCOVERED_{ip_address}\n"
+                        f"IP Address: {ip_address}\n"
+                        f"MAC Address: {discovered_mac}\n"
+                        f"Vendor: {vendor}\n"
+                        f"Status: online\n"
+                        f"DiscoveryDate: {datetime.now().isoformat()}\n"
+                        f"Source: Network Discovery\n"
+                    )
+                    try:
+                        with open(new_asset_filepath, 'w', encoding='utf-8') as f:
+                            f.write(file_content)
+                        logger.info(f"Discovery: Created new asset file: {new_asset_filepath}")
+                        data_changed_by_discovery_this_iteration = True
+                    except IOError as e:
+                        logger.error(f"Discovery: Failed to write new asset file {new_asset_filepath}: {e}")
+
+            # If no MAC, but IP is live - try to update existing asset by IP (but don't create new file)
+            elif mac_scan_result.get("status") == "online": # MAC not found, but host is up
+                logger.info(f"Discovery: MAC address not found for live IP {ip_address}. Will try to match by IP for existing assets.")
+                for asset_name, asset_data_existing in st.session_state.assets_data.items():
+                    if asset_data_existing.get('network_info', {}).get('ip_address') == ip_address:
+                        # Only update status if it's not already reflecting a recent scan by other means
+                        # This avoids overwriting a detailed 'online' from full scan with a simple 'online' from discovery
+                        if asset_data_existing['network_info'].get('status') != 'online' or \
+                           asset_data_existing['network_info'].get('nmap_scan_status') not in ['completed', 'scanning']:
+                            logger.info(f"Discovery: Known asset '{asset_name}' found by IP {ip_address} (MAC not identified in this scan). Updating status.")
+                            asset_data_existing['network_info']['status'] = 'online'
+                            # Do not change nmap_scan_status here to 'completed' unless we are sure this is the primary source of truth now.
+                            # Keep it as is, or set to something like 'verified_online_by_discovery' if a new state is desired.
+                            # For now, just update 'status' and 'last_seen_via_discovery'.
+                            asset_data_existing['network_info']['last_seen_via_discovery'] = datetime.now().isoformat()
+                            data_changed_by_discovery_this_iteration = True
+                            # Note: We are not updating the IP address line in the file here,
+                            # as this block is for when MAC is primary identifier and wasn't found.
+                            # Updating IP in file is handled in the MAC-found block.
+                        break # Found by IP
+                # No 'else' here to create new file, as per requirement (new files created only if MAC is found)
+
+            if data_changed_by_discovery_this_iteration:
+                self.data_changed_by_discovery = True # Set the class/instance level flag
 
         logger.info("Network asset discovery process completed.")
+        if self.data_changed_by_discovery:
+            logger.info("Reloading all asset data due to changes during discovery.")
+            st.session_state.assets_data = self.load_assets_data()
         # Future: Implement logic to mark assets not found as potentially offline.
+
+    def get_mac_vendor_details(self, mac_address: str) -> Optional[str]:
+        """
+        Looks up the vendor for a given MAC address using an external API.
+        Includes a mock for a test MAC address.
+        """
+        if not mac_address:
+            return None
+
+        # Mocked response for testing
+        test_mac = "00:00:00:TEST:00" # Example test MAC
+        if mac_address.upper() == test_mac:
+            logger.info(f"Returning mocked vendor for test MAC: {mac_address}")
+            return "Test Vendor Inc."
+
+        # Using api.maclookup.app - no API key needed for basic vendor info
+        # Normalizing MAC address format for the API (e.g., removing colons/hyphens if needed by API)
+        # This API seems to accept MAC with colons.
+        api_url = f"https://api.maclookup.app/v2/macs/{mac_address.upper()}"
+
+        logger.info(f"Querying MAC vendor for: {mac_address} at {api_url}")
+
+        try:
+            response = requests.get(api_url, timeout=10) # 10-second timeout
+
+            if response.status_code == 200:
+                try:
+                    data = response.json()
+                    vendor = data.get('vendor')
+                    if vendor:
+                        logger.info(f"Vendor found for {mac_address}: {vendor}")
+                        return vendor
+                    else:
+                        logger.info(f"Vendor field not found in API response for {mac_address}. Response: {data}")
+                        return "Unknown Vendor (No vendor field)"
+                except json.JSONDecodeError:
+                    logger.error(f"Failed to decode JSON response for {mac_address}. Response text: {response.text}")
+                    return "Unknown Vendor (JSON Decode Error)"
+            elif response.status_code == 404: # Not Found - MAC prefix not in their database
+                logger.info(f"Vendor not found for MAC {mac_address} (404 Error).")
+                return "Unknown Vendor"
+            elif response.status_code == 400: # Bad Request (e.g. invalid MAC format)
+                logger.warning(f"Bad request for MAC vendor lookup ({mac_address}). Status: 400. Response: {response.text}")
+                return "Unknown Vendor (Invalid MAC format for API)"
+            elif response.status_code == 429: # Too many requests
+                logger.warning(f"Too many requests to MAC vendor API for {mac_address}. Status: 429.")
+                return None # Indicate rate limiting, perhaps try later or signal unavailability
+            else:
+                logger.error(f"Error looking up MAC vendor for {mac_address}. Status: {response.status_code}, Response: {response.text}")
+                return None # Or "Unknown Vendor (API Error)"
+
+        except requests.exceptions.Timeout:
+            logger.error(f"Timeout during MAC vendor lookup for {mac_address} at {api_url}")
+            return None
+        except requests.exceptions.ConnectionError:
+            logger.error(f"Connection error during MAC vendor lookup for {mac_address} at {api_url}")
+            return None
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Error during MAC vendor lookup for {mac_address}: {e}")
+            return None
+
+        return None # Default return if other paths don't hit
 
     def run(self):
         """Main application entry point"""
@@ -1497,6 +1718,10 @@ class ITAssetDashboard:
                 if st.session_state.search_term_filter:
                     active_pills_data.append((f"Search: \"{st.session_state.search_term_filter}\"", "dismiss_search", {"type": "search_term"}))
 
+                # Pill for "Show Discovered Only"
+                if st.session_state.show_discovered_only_filter:
+                    active_pills_data.append(("View: Auto-Discovered", "dismiss_discovered_only", {"type": "show_discovered_only"}))
+
                 if active_pills_data:
                     st.markdown('<div class="filter-pill-container">', unsafe_allow_html=True)
                     # Max pills per row roughly
@@ -1531,6 +1756,8 @@ class ITAssetDashboard:
                                             st.session_state.anydesk_search_filter = ""
                                         elif filter_type == "search_term":
                                             st.session_state.search_term_filter = ""
+                                        elif filter_type == "show_discovered_only":
+                                            st.session_state.show_discovered_only_filter = False
                                         st.rerun()
                                     st.markdown('</div>', unsafe_allow_html=True) # Close filter-pill div
                     st.markdown('</div>', unsafe_allow_html=True) # Close filter-pill-container
@@ -1545,6 +1772,7 @@ class ITAssetDashboard:
                 'min_storage': st.session_state.storage_range_filter[0] if st.session_state.storage_range_filter else default_min_storage,
                 'max_storage': st.session_state.storage_range_filter[1] if st.session_state.storage_range_filter else default_max_storage,
                 'show_low_storage': st.session_state.show_low_storage_only,
+                'show_discovered_only': st.session_state.show_discovered_only_filter, # Added for filter_assets
                 'anydesk_search': st.session_state.anydesk_search_filter,
                 'search_term': st.session_state.search_term_filter
             }
@@ -1661,6 +1889,11 @@ class ITAssetDashboard:
 
         if st.session_state.nmap_scan_type == "Full Scan" and nmap_result.get('mac_address'):
             target_asset['network_info']['mac_address'] = nmap_result.get('mac_address')
+
+        # Store detected_os_type if the scan provides it (e.g. Full Scan with -A, or a future OS Scan type)
+        if nmap_result.get('detected_os_type'):
+            target_asset.setdefault('os_info', {}).setdefault('detected_os_type', nmap_result.get('detected_os_type'))
+            # If 'os_info' was missing, setdefault creates it. Then setdefault for 'detected_os_type'.
 
         target_asset['network_info']['nmap_scan_output'] = nmap_result.get('nmap_output')
         target_asset['network_info']['nmap_error'] = nmap_result.get('error_message')
