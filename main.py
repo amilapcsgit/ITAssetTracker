@@ -1991,7 +1991,6 @@ class ITAssetDashboard:
                             discovery_date_display = html.escape(discovery_date_str_raw)
 
                     name_from_asset = name # 'name' is the key from the dictionary, usually computer_name
-            name_from_asset = re.sub(r'<[^>]+>', '', str(name_from_asset))
                     escaped_name = html.escape(str(name_from_asset))
                     escaped_ip_address = html.escape(str(ip_address_raw))
                     escaped_mac_address = html.escape(str(mac_address_raw))

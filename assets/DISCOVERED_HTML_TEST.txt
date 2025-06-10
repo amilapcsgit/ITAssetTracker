@@ -1,4 +1,4 @@
-Computer Name: <a href='#'>Test Asset HTML Name</a>
+Computer Name: Test Asset Clean Name
 IP Address: 192.168.1.99
 MAC Address: AA:BB:CC:DD:EE:FF
 Vendor: TestVendor
