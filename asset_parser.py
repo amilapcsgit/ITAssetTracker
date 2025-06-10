@@ -87,7 +87,10 @@ class AssetParser:
                 r'Network Mode[:\s]+([^\n\r]+)',
                 r'DHCP[:\s]+([^\n\r]+)',
                 r'IP Configuration[:\s]+([^\n\r]+)'
-            ]
+            ],
+            'vendor': [r'Vendor[:\s]+([^\n\r]+)'],
+            'discovery_date': [r'DiscoveryDate[:\s]+([^\n\r]+)'],
+            'source': [r'Source[:\s]+([^\n\r]+)'],
         }
 
     def extract_field(self, content: str, field_name: str) -> Optional[str]:
@@ -354,6 +357,9 @@ class AssetParser:
                 'computer_name': self.extract_field(content, 'computer_name') or file_path.stem,
                 'anydesk_id': self.extract_field(content, 'anydesk_id'),
                 'user_email': self.extract_field(content, 'user_email'),
+                'vendor': self.extract_field(content, 'vendor'), # Added
+                'discovery_date': self.extract_field(content, 'discovery_date'), # Added
+                'source': self.extract_field(content, 'source'), # Added
                 'system_info': {
                     'manufacturer': self.extract_field(content, 'manufacturer'),
                     'model': self.extract_field(content, 'model'),

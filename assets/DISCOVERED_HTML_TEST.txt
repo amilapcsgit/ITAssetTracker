@@ -1,0 +1,7 @@
+Computer Name: Test Asset Clean Name
+IP Address: 192.168.1.99
+MAC Address: AA:BB:CC:DD:EE:FF
+Vendor: TestVendor
+DiscoveryDate: 2023-01-01T12:00:00
+Source: Network Discovery
+Status: online
